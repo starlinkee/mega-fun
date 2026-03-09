@@ -19,6 +19,16 @@
                 <label class="form-label">Treść maila</label>
                 <textarea class="form-control" name="body" rows="8" placeholder="Treść wiadomości email..." required></textarea>
             </div>
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">Kraj <small class="text-muted">(opcjonalnie)</small></label>
+                    <input type="text" class="form-control" name="target_country" placeholder="np. Poland">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Miasto <small class="text-muted">(opcjonalnie)</small></label>
+                    <input type="text" class="form-control" name="target_city" placeholder="np. Kraków">
+                </div>
+            </div>
             <button type="submit" class="btn btn-success" id="createBtn">Utwórz i uruchom kampanię</button>
             <span class="ms-2" id="campaignStatus"></span>
         </form>
@@ -35,6 +45,7 @@
                     <th>#</th>
                     <th>Nazwa</th>
                     <th>Temat</th>
+                    <th>Targetowanie</th>
                     <th>Status</th>
                     <th>Postęp</th>
                     <th>Utworzono</th>
@@ -47,6 +58,14 @@
                     <td>{{ c.id }}</td>
                     <td>{{ c.name }}</td>
                     <td>{{ c.subject }}</td>
+                    <td>
+                        {% if c.target_city or c.target_country %}
+                            {% if c.target_country %}<small>{{ c.target_country }}</small>{% endif %}
+                            {% if c.target_city %}<small>{{ ', ' if c.target_country }}{{ c.target_city }}</small>{% endif %}
+                        {% else %}
+                            <small class="text-muted">Wszystkie</small>
+                        {% endif %}
+                    </td>
                     <td>
                         {% if c.status == 'active' %}
                             <span class="badge bg-success">Aktywna</span>
@@ -84,7 +103,7 @@
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="7" class="text-center text-muted">Brak kampanii</td></tr>
+                <tr><td colspan="8" class="text-center text-muted">Brak kampanii</td></tr>
                 {% endfor %}
             </tbody>
         </table>

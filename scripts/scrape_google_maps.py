@@ -69,7 +69,7 @@ def search_places(api_key, query, coords_sw=None, coords_ne=None):
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": api_key,
-        "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.types,"
+        "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.addressComponents,places.types,"
                             "places.nationalPhoneNumber,places.websiteUri,nextPageToken",
     }
 
@@ -98,9 +98,20 @@ def search_places(api_key, query, coords_sw=None, coords_ne=None):
             raise Exception(f"API error {err.get('code')}: {err.get('message', '')}")
 
         for place in data.get("places", []):
+            # Extract city and country from addressComponents
+            city = ""
+            country = ""
+            for comp in place.get("addressComponents", []):
+                types = comp.get("types", [])
+                if "locality" in types:
+                    city = comp.get("longText", "")
+                elif "country" in types:
+                    country = comp.get("longText", "")
             results.append({
                 "name": place.get("displayName", {}).get("text", ""),
                 "address": place.get("formattedAddress", ""),
+                "city": city,
+                "country": country,
                 "category_google": ", ".join(place.get("types", [])),
                 "place_id": place.get("id", ""),
                 "phone": place.get("nationalPhoneNumber", ""),
@@ -118,16 +129,23 @@ def search_places(api_key, query, coords_sw=None, coords_ne=None):
 
 
 def save_business(db, biz, query):
-    """Insert business, skip if name+address already exists for this query."""
-    existing = db.execute(
-        "SELECT id FROM businesses WHERE name = ? AND address = ? AND source_query = ?",
-        (biz["name"], biz["address"], query),
-    ).fetchone()
+    """Insert business, skip if place_id already exists."""
+    place_id = biz.get("place_id", "")
+    if place_id:
+        existing = db.execute(
+            "SELECT id FROM businesses WHERE place_id = ?",
+            (place_id,),
+        ).fetchone()
+    else:
+        existing = db.execute(
+            "SELECT id FROM businesses WHERE name = ? AND address = ?",
+            (biz["name"], biz["address"]),
+        ).fetchone()
     if existing:
         return False
     db.execute(
-        "INSERT INTO businesses (name, address, phone, website, category, category_google, source_query) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (biz["name"], biz["address"], biz.get("phone", ""), biz.get("website", ""), query, biz.get("category_google", ""), query),
+        "INSERT INTO businesses (name, address, city, country, phone, website, category, category_google, source_query, place_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (biz["name"], biz["address"], biz.get("city", ""), biz.get("country", ""), biz.get("phone", ""), biz.get("website", ""), query, biz.get("category_google", ""), query, place_id),
     )
     return True
 

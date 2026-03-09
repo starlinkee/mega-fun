@@ -457,6 +457,8 @@ def create_campaign():
     name = request.form.get("name", "").strip()
     subject = request.form.get("subject", "").strip()
     body = request.form.get("body", "").strip()
+    target_city = request.form.get("target_city", "").strip() or None
+    target_country = request.form.get("target_country", "").strip() or None
 
     if not name or not subject or not body:
         return jsonify({"error": "Wypełnij wszystkie pola"}), 400
@@ -468,18 +470,26 @@ def create_campaign():
     status = "queued" if active else "active"
 
     cursor = db.execute(
-        "INSERT INTO campaigns (name, subject, body_template, status) VALUES (?, ?, ?, ?)",
-        (name, subject, body, status),
+        "INSERT INTO campaigns (name, subject, body_template, status, target_city, target_country) VALUES (?, ?, ?, ?, ?, ?)",
+        (name, subject, body, status, target_city, target_country),
     )
     campaign_id = cursor.lastrowid
 
     # Add only emails not yet successfully sent in any previous campaign
-    emails = db.execute(
-        """SELECT id FROM emails
-           WHERE id NOT IN (
-               SELECT email_id FROM campaign_emails WHERE status IN ('sent', 'failed')
-           )"""
-    ).fetchall()
+    # Optionally filter by city and/or country
+    query = """SELECT e.id FROM emails e
+               JOIN businesses b ON e.business_id = b.id
+               WHERE e.id NOT IN (
+                   SELECT email_id FROM campaign_emails WHERE status IN ('sent', 'failed')
+               )"""
+    params = []
+    if target_country:
+        query += " AND b.country = ?"
+        params.append(target_country)
+    if target_city:
+        query += " AND b.city = ?"
+        params.append(target_city)
+    emails = db.execute(query, params).fetchall()
     for e in emails:
         db.execute(
             "INSERT INTO campaign_emails (campaign_id, email_id, status) VALUES (?, ?, 'pending')",

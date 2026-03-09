@@ -31,6 +31,8 @@
                         <th class="sortable" data-col="id">#</th>
                         <th class="sortable" data-col="name">Nazwa</th>
                         <th class="sortable" data-col="address">Adres</th>
+                        <th class="sortable" data-col="city">Miasto</th>
+                        <th class="sortable" data-col="country">Kraj</th>
                         <th class="sortable" data-col="phone">Telefon</th>
                         <th>Strona</th>
                         <th class="sortable" data-col="category">Kategoria</th>
@@ -40,7 +42,7 @@
                     </tr>
                 </thead>
                 <tbody id="bizTableBody">
-                    <tr><td colspan="9" class="text-center text-muted">Ladowanie...</td></tr>
+                    <tr><td colspan="11" class="text-center text-muted">Ladowanie...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -86,7 +88,7 @@ function renderTable(businesses) {
     lastBusinesses = businesses;
     const tbody = document.getElementById('bizTableBody');
     if (!businesses.length) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">Brak danych</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">Brak danych</td></tr>';
         return;
     }
 
@@ -106,6 +108,8 @@ function renderTable(businesses) {
             <td>${b.id}</td>
             <td>${esc(b.name)}</td>
             <td>${esc(b.address)}</td>
+            <td>${esc(b.city || '')}</td>
+            <td>${esc(b.country || '')}</td>
             <td>${esc(b.phone || '')}</td>
             <td>${b.website ? `<a href="${esc(b.website)}" target="_blank">link</a>` : ''}</td>
             <td><small>${esc(b.category || '')}</small></td>

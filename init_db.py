@@ -12,6 +12,8 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT,
             address TEXT,
+            city TEXT,
+            country TEXT,
             phone TEXT,
             website TEXT,
             category TEXT,
@@ -55,6 +57,8 @@ def init_db():
             subject TEXT,
             body_template TEXT,
             status TEXT DEFAULT 'draft',
+            target_city TEXT,
+            target_country TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -104,6 +108,17 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # Migrations — add columns if they don't exist yet (safe to re-run)
+    for col, table in [
+        ("city", "businesses"), ("country", "businesses"),
+        ("place_id", "businesses"),
+        ("target_city", "campaigns"), ("target_country", "campaigns"),
+    ]:
+        try:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already exists
 
     conn.commit()
     conn.close()
