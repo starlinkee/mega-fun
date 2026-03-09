@@ -10,8 +10,12 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import re
 import sqlite3
 from config import DATABASE
+
+# Pattern to strip leading postal codes like "1220", "00-123", "10115"
+POSTAL_PREFIX_RE = re.compile(r'^\d[\d\s\-]{0,8}\s+', re.UNICODE)
 
 
 def main():
@@ -27,7 +31,7 @@ def main():
             pass
 
     rows = conn.execute(
-        "SELECT id, address FROM businesses WHERE (city IS NULL OR city = '') AND address IS NOT NULL AND address != ''"
+        "SELECT id, address, city FROM businesses WHERE address IS NOT NULL AND address != ''"
     ).fetchall()
 
     updated = 0
@@ -40,7 +44,8 @@ def main():
             city = ""
             for part in reversed(parts[1:-1]):
                 if not part.replace("-", "").replace(" ", "").isdigit():
-                    city = part
+                    # Strip leading postal code: "1220 Wien" -> "Wien"
+                    city = POSTAL_PREFIX_RE.sub('', part).strip() or part
                     break
             conn.execute(
                 "UPDATE businesses SET city = ?, country = ? WHERE id = ?",
@@ -51,6 +56,7 @@ def main():
             # Short format: "street, city" — city is last part, country unknown
             city = parts[-1]
             if not city.replace("-", "").replace(" ", "").isdigit():
+                city = POSTAL_PREFIX_RE.sub('', city).strip() or city
                 conn.execute(
                     "UPDATE businesses SET city = ?, country = '' WHERE id = ?",
                     (city, row["id"]),
