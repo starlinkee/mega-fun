@@ -162,7 +162,7 @@ def main():
                 (ce_id,),
             )
             db.execute(
-                "UPDATE mailboxes SET daily_sent = daily_sent + 1, last_sent_at = CURRENT_TIMESTAMP WHERE id = ?",
+                "UPDATE mailboxes SET daily_sent = daily_sent + 1, total_sent = total_sent + 1, last_sent_at = CURRENT_TIMESTAMP WHERE id = ?",
                 (mb["id"],),
             )
             sent_count += 1

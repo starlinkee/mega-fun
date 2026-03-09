@@ -45,6 +45,7 @@ def init_db():
             password TEXT NOT NULL,
             active INTEGER DEFAULT 1,
             daily_sent INTEGER DEFAULT 0,
+            total_sent INTEGER DEFAULT 0,
             last_sent_at TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -114,11 +115,17 @@ def init_db():
         ("city", "businesses"), ("country", "businesses"),
         ("place_id", "businesses"),
         ("target_city", "campaigns"), ("target_country", "campaigns"),
+        ("target_category", "campaigns"),
     ]:
         try:
             c.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
         except sqlite3.OperationalError:
             pass  # column already exists
+
+    try:
+        c.execute("ALTER TABLE mailboxes ADD COLUMN total_sent INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
 
     conn.commit()
     conn.close()

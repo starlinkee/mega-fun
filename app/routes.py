@@ -448,8 +448,12 @@ def tab_campaigns():
         d["sent"] = sent
         d["failed"] = failed
         campaigns_list.append(d)
+    categories = db.execute(
+        "SELECT DISTINCT category FROM businesses WHERE category IS NOT NULL AND category != '' ORDER BY category"
+    ).fetchall()
+    categories_list = [r["category"] for r in categories]
     db.close()
-    return render_template("tabs/campaigns.html", active_tab="campaigns", campaigns=campaigns_list)
+    return render_template("tabs/campaigns.html", active_tab="campaigns", campaigns=campaigns_list, categories=categories_list)
 
 
 @main_bp.route("/campaigns/create", methods=["POST"])
@@ -459,6 +463,7 @@ def create_campaign():
     body = request.form.get("body", "").strip()
     target_city = request.form.get("target_city", "").strip() or None
     target_country = request.form.get("target_country", "").strip() or None
+    target_category = request.form.get("target_category", "").strip() or None
 
     if not name or not subject or not body:
         return jsonify({"error": "Wypełnij wszystkie pola"}), 400
@@ -470,8 +475,8 @@ def create_campaign():
     status = "queued" if active else "active"
 
     cursor = db.execute(
-        "INSERT INTO campaigns (name, subject, body_template, status, target_city, target_country) VALUES (?, ?, ?, ?, ?, ?)",
-        (name, subject, body, status, target_city, target_country),
+        "INSERT INTO campaigns (name, subject, body_template, status, target_city, target_country, target_category) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (name, subject, body, status, target_city, target_country, target_category),
     )
     campaign_id = cursor.lastrowid
 
@@ -489,6 +494,9 @@ def create_campaign():
     if target_city:
         query += " AND b.city = ?"
         params.append(target_city)
+    if target_category:
+        query += " AND b.category = ?"
+        params.append(target_category)
     emails = db.execute(query, params).fetchall()
     for e in emails:
         db.execute(

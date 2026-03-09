@@ -101,6 +101,7 @@
                     <th>Port</th>
                     <th>Aktywna</th>
                     <th>Wysłano dziś</th>
+                    <th>Wysłano w sumie</th>
                     <th>Ostatnia wysyłka</th>
                     <th></th>
                 </tr>
@@ -114,13 +115,14 @@
                     <td>{{ m.smtp_port }}</td>
                     <td>{{ "Tak" if m.active else "Nie" }}</td>
                     <td>{{ m.daily_sent }}</td>
+                    <td>{{ m.total_sent or 0 }}</td>
                     <td>{{ m.last_sent_at or "—" }}</td>
                     <td>
                         <button type="button" class="btn btn-danger btn-sm" onclick="deleteMailbox({{ m.id }}, this)">Usuń</button>
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="8" class="text-center text-muted">Brak skrzynek</td></tr>
+                <tr><td colspan="9" class="text-center text-muted">Brak skrzynek</td></tr>
                 {% endfor %}
             </tbody>
         </table>
