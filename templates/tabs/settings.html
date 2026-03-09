@@ -220,7 +220,7 @@ function deleteMailbox(id, btn) {
                 alert(data.error);
             } else {
                 const row = document.getElementById('mailbox-row-' + id);
-                row.style.backgroundColor = '#d1e7dd';
+                row.style.backgroundColor = 'rgba(25, 135, 84, 0.15)';
                 row.querySelector('td:last-child').innerHTML = '<span class="text-success"><strong>Usunięto!</strong></span>';
                 setTimeout(() => row.remove(), 1500);
             }

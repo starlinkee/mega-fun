@@ -70,11 +70,11 @@
                         {% if c.status == 'active' %}
                             <span class="badge bg-success">Aktywna</span>
                         {% elif c.status == 'queued' %}
-                            <span class="badge bg-info text-dark">W kolejce</span>
+                            <span class="badge bg-info">W kolejce</span>
                         {% elif c.status == 'done' %}
                             <span class="badge bg-primary">Zakończona</span>
                         {% elif c.status == 'stopped' %}
-                            <span class="badge bg-warning text-dark">Zatrzymana</span>
+                            <span class="badge bg-warning">Zatrzymana</span>
                         {% else %}
                             <span class="badge bg-secondary">{{ c.status }}</span>
                         {% endif %}
@@ -178,7 +178,7 @@ function deleteCampaign(id, btn) {
         .then(r => r.json())
         .then(() => {
             const row = document.getElementById('campaign-row-' + id);
-            row.style.backgroundColor = '#d1e7dd';
+            row.style.backgroundColor = 'rgba(25, 135, 84, 0.15)';
             row.querySelector('td:last-child').innerHTML = '<span class="text-success"><strong>Usunięto!</strong></span>';
             setTimeout(() => row.remove(), 1500);
         })

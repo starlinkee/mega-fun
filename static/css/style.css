@@ -1,16 +1,279 @@
-body {
-    background-color: #f8f9fa;
+/* ===================== MEGA-FUN DARK THEME ===================== */
+
+:root {
+    --bg-body: #0f0f1a;
+    --bg-surface: #161625;
+    --bg-card: #1a1a2e;
+    --bg-card-header: #16213e;
+    --bg-input: #0f3460;
+    --border-color: #1e2d4a;
+    --accent: #e94560;
+    --accent-hover: #c73652;
+    --text-primary: #ccd6f6;
+    --text-secondary: #8892b0;
+    --text-muted: #5a6380;
 }
 
+/* Body */
+body {
+    background: var(--bg-body) !important;
+    color: var(--text-primary);
+}
+
+/* Navbar */
+.navbar {
+    background: var(--bg-card) !important;
+    border-color: var(--border-color) !important;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+.navbar-brand {
+    font-size: 1.3rem;
+    letter-spacing: -0.5px;
+}
+
+.text-accent {
+    color: var(--accent) !important;
+}
+
+.nav-link {
+    color: var(--text-secondary) !important;
+    font-weight: 500;
+    font-size: 0.9rem;
+    padding: 0.5rem 0.85rem !important;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.nav-link:hover {
+    color: var(--text-primary) !important;
+    background: rgba(233, 69, 96, 0.1);
+}
+
+.nav-link.active {
+    color: #fff !important;
+    background: rgba(233, 69, 96, 0.15);
+    border-bottom: 2px solid var(--accent);
+}
+
+/* Cards */
 .card {
-    border-radius: 8px;
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 10px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.card-header {
+    background: var(--bg-card-header) !important;
+    border-bottom: 1px solid var(--border-color) !important;
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.card-footer {
+    background: var(--bg-card-header) !important;
+    border-top: 1px solid var(--border-color) !important;
+}
+
+/* Tables */
+.table {
+    --bs-table-bg: transparent;
+    --bs-table-striped-bg: rgba(255, 255, 255, 0.02);
+    --bs-table-hover-bg: rgba(233, 69, 96, 0.06);
+    --bs-table-color: var(--text-primary);
+    border-color: var(--border-color);
 }
 
 .table th {
-    font-size: 0.85rem;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
     white-space: nowrap;
+    border-color: var(--border-color);
+    font-weight: 600;
 }
 
 .table td {
     font-size: 0.85rem;
+    border-color: var(--border-color);
+    vertical-align: middle;
 }
+
+.table-active {
+    --bs-table-active-bg: rgba(233, 69, 96, 0.12) !important;
+}
+
+/* Forms */
+.form-control,
+.form-select {
+    background: var(--bg-input) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+    border-radius: 8px;
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 0.2rem rgba(233, 69, 96, 0.2) !important;
+    background: var(--bg-input) !important;
+    color: #fff !important;
+}
+
+.form-control::placeholder {
+    color: var(--text-muted) !important;
+}
+
+.form-label {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.form-text {
+    color: var(--text-muted) !important;
+}
+
+/* Buttons - Primary uses accent color */
+.btn-primary {
+    background: var(--accent) !important;
+    border-color: var(--accent) !important;
+    color: #fff !important;
+    font-weight: 600;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+.btn-primary:hover {
+    background: var(--accent-hover) !important;
+    border-color: var(--accent-hover) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(233, 69, 96, 0.3);
+}
+
+.btn-success {
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+.btn-outline-secondary {
+    border-color: var(--border-color) !important;
+    color: var(--text-secondary) !important;
+    border-radius: 8px;
+}
+
+.btn-outline-secondary:hover,
+.btn-outline-secondary.active {
+    background: rgba(233, 69, 96, 0.15) !important;
+    border-color: var(--accent) !important;
+    color: var(--text-primary) !important;
+}
+
+.btn-outline-danger {
+    border-radius: 6px;
+}
+
+/* Badges */
+.badge {
+    font-weight: 500;
+    font-size: 0.75rem;
+    border-radius: 6px;
+    padding: 0.35em 0.65em;
+}
+
+/* Alerts */
+.alert {
+    border-radius: 8px;
+    border: none;
+}
+
+/* Progress bars */
+.progress {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+}
+
+/* Modals */
+.modal-content {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+}
+
+.modal-header {
+    border-color: var(--border-color);
+}
+
+.btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+}
+
+/* Headings */
+h4 {
+    color: var(--text-primary);
+    font-weight: 700;
+    font-size: 1.3rem;
+    margin-bottom: 1rem;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-body);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+}
+
+/* Links */
+a {
+    color: var(--accent);
+}
+
+a:hover {
+    color: var(--accent-hover);
+}
+
+/* Small text helpers */
+.text-muted {
+    color: var(--text-muted) !important;
+}
+
+/* Spinner color override */
+.spinner-border {
+    border-color: var(--accent);
+    border-right-color: transparent;
+}
+
+/* Smooth transitions */
+.card, .btn, .nav-link, .form-control, .form-select {
+    transition: all 0.2s ease;
+}
+
+/* Map placeholder */
+#scrapeMap {
+    background: var(--bg-surface) !important;
+}
+
+/* Sortable headers */
+th.sortable:hover {
+    background: rgba(233, 69, 96, 0.08) !important;
+    cursor: pointer;
+}
+
+th.sortable::after { content: ' \2195'; opacity: .3; font-size: .8em; }
+th.sort-asc::after { content: ' \2191'; opacity: 1; color: var(--accent); }
+th.sort-desc::after { content: ' \2193'; opacity: 1; color: var(--accent); }
