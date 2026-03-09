@@ -13,6 +13,7 @@ import re
 import json
 import argparse
 import time
+import random
 from urllib.parse import urljoin, urlparse
 
 # Add project root to path
@@ -241,7 +242,7 @@ def crawl_website(url, max_pages):
                             to_visit_normal.append(link)
 
                 # Small delay between requests to same site
-                time.sleep(0.3)
+                time.sleep(random.uniform(1.0, 2.0))
 
             except Exception:
                 continue
@@ -354,7 +355,7 @@ def main():
             }), flush=True)
 
             # Delay between different business websites
-            time.sleep(0.3)
+            time.sleep(random.uniform(1.0, 3.0))
 
         summary = (
             f"Przeskanowano {total} biznesow ({total_pages_visited} podstron), "

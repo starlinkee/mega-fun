@@ -2,11 +2,17 @@ import subprocess
 import sys
 import os
 import re
+import time
 
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session
 from app.db import get_db
 from app.crypto import encrypt, decrypt
 from config import APP_PASSWORD
+
+# Brute force protection: track failed login attempts per IP
+_login_attempts = {}  # ip -> {"count": int, "locked_until": float}
+_MAX_ATTEMPTS = 5
+_LOCKOUT_SECONDS = 300  # 5 minut
 
 
 def _extract_source_query(details):
@@ -42,12 +48,33 @@ def require_login():
 @main_bp.route("/login", methods=["GET", "POST"])
 def login():
     error = None
+    ip = request.remote_addr
+
     if request.method == "POST":
+        now = time.time()
+        attempt = _login_attempts.get(ip, {"count": 0, "locked_until": 0})
+
+        if attempt["locked_until"] > now:
+            remaining = int(attempt["locked_until"] - now)
+            return render_template("login.html", error=f"Zbyt wiele prób. Spróbuj za {remaining} sekund.")
+
         password = request.form.get("password", "")
         if password == APP_PASSWORD:
+            _login_attempts.pop(ip, None)
             session["authenticated"] = True
             return redirect(url_for("main.index"))
-        error = "Nieprawidłowe hasło"
+
+        attempt["count"] += 1
+        if attempt["count"] >= _MAX_ATTEMPTS:
+            attempt["locked_until"] = now + _LOCKOUT_SECONDS
+            attempt["count"] = 0
+            _login_attempts[ip] = attempt
+            return render_template("login.html", error=f"Zbyt wiele nieudanych prób. Konto zablokowane na {_LOCKOUT_SECONDS // 60} minut.")
+
+        _login_attempts[ip] = attempt
+        remaining_attempts = _MAX_ATTEMPTS - attempt["count"]
+        error = f"Nieprawidłowe hasło. Pozostało prób: {remaining_attempts}."
+
     return render_template("login.html", error=error)
 
 
@@ -215,7 +242,7 @@ def tab_businesses():
 
 @main_bp.route("/api/scrape-tasks")
 def api_scrape_tasks():
-    """Return all scrape operations from operations_log with email counts."""
+    """Return all scrape operations from operations_log with business counts."""
     db = get_db()
     rows = db.execute(
         "SELECT * FROM operations_log WHERE operation_type = 'google_maps_scrape' ORDER BY started_at DESC"
@@ -227,14 +254,12 @@ def api_scrape_tasks():
         t["source_query"] = source_query
         if source_query:
             count = db.execute(
-                """SELECT COUNT(DISTINCT e.id) FROM emails e
-                   JOIN businesses b ON e.business_id = b.id
-                   WHERE b.source_query = ?""",
+                "SELECT COUNT(*) FROM businesses WHERE source_query = ?",
                 (source_query,),
             ).fetchone()[0]
         else:
             count = 0
-        t["email_count"] = count
+        t["business_count"] = count
         tasks.append(t)
     db.close()
     return jsonify({"tasks": tasks})

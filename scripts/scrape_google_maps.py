@@ -132,6 +132,66 @@ def save_business(db, biz, query):
     return True
 
 
+MAX_SUBDIVISION_DEPTH = 3  # max recursion depth (max 64 sub-areas)
+
+
+def update_op_details(op_id, details):
+    """Update operation details text without changing status/finished_at."""
+    db = get_db()
+    db.execute("UPDATE operations_log SET details = ? WHERE id = ?", (details, op_id))
+    db.commit()
+    db.close()
+
+
+def scrape_recursive(api_key, query, sw, ne, db, op_id, depth=0, stats=None):
+    """Scrape an area; if 60 results returned, subdivide into 4 quadrants and recurse."""
+    if stats is None:
+        stats = {"found": 0, "saved": 0, "areas": 0, "subdivisions": 0, "depth_saturated": 0}
+
+    coords_sw = f"{sw[0]},{sw[1]}"
+    coords_ne = f"{ne[0]},{ne[1]}"
+
+    places = search_places(api_key, query, coords_sw, coords_ne)
+
+    if len(places) == 60 and depth < MAX_SUBDIVISION_DEPTH:
+        # Area saturated — divide into 4 quadrants
+        stats["subdivisions"] += 1
+        mid_lat = (sw[0] + ne[0]) / 2
+        mid_lng = (sw[1] + ne[1]) / 2
+
+        quadrants = [
+            ([sw[0], sw[1]],       [mid_lat, mid_lng]),   # SW
+            ([sw[0], mid_lng],     [mid_lat, ne[1]]),      # SE
+            ([mid_lat, sw[1]],     [ne[0], mid_lng]),      # NW
+            ([mid_lat, mid_lng],   [ne[0], ne[1]]),        # NE
+        ]
+
+        update_op_details(op_id, f"Podzielono na {4 ** (depth + 1)} obszarow (depth={depth+1}), zapisano {stats['saved']} nowych (query: {query})")
+        print(json.dumps({"status": "subdividing", "depth": depth, "query": query}), flush=True)
+
+        for q_sw, q_ne in quadrants:
+            scrape_recursive(api_key, query, q_sw, q_ne, db, op_id, depth + 1, stats)
+    else:
+        # Area is small enough (or hit depth limit) — save results
+        if len(places) == 60 and depth >= MAX_SUBDIVISION_DEPTH:
+            stats["depth_saturated"] += 1
+        for place in places:
+            if save_business(db, place, query):
+                stats["saved"] += 1
+        stats["found"] += len(places)
+        stats["areas"] += 1
+
+        db.execute(
+            "INSERT INTO scrape_areas (source_query, sw_lat, sw_lng, ne_lat, ne_lng, results_count) VALUES (?, ?, ?, ?, ?, ?)",
+            (query, sw[0], sw[1], ne[0], ne[1], len(places)),
+        )
+        db.commit()
+
+        print(json.dumps({"status": "area_done", "depth": depth, "found": len(places)}), flush=True)
+
+    return stats
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("query", help="Search query for Google Maps")
@@ -154,35 +214,40 @@ def main():
 
     try:
         print(json.dumps({"status": "searching", "query": args.query}), flush=True)
-        places = search_places(api_key, args.query, args.coords_sw, args.coords_ne)
 
-        db = get_db()
-        saved = 0
-        for i, place in enumerate(places):
-            if save_business(db, place, args.query):
-                saved += 1
-
-            # Progress output
-            print(json.dumps({"status": "progress", "current": i + 1, "total": len(places)}), flush=True)
-
-        db.commit()
-        db.close()
-
-        # Save scrape area if coordinates were provided
         if args.coords_sw and args.coords_ne:
+            # Recursive subdivision mode
             sw = [float(x.strip()) for x in args.coords_sw.split(",")]
             ne = [float(x.strip()) for x in args.coords_ne.split(",")]
-            db2 = get_db()
-            db2.execute(
-                "INSERT INTO scrape_areas (source_query, sw_lat, sw_lng, ne_lat, ne_lng, results_count) VALUES (?, ?, ?, ?, ?, ?)",
-                (args.query, sw[0], sw[1], ne[0], ne[1], len(places)),
-            )
-            db2.commit()
-            db2.close()
+            db = get_db()
+            stats = scrape_recursive(api_key, args.query, sw, ne, db, op_id)
+            db.close()
 
-        summary = f"Znaleziono {len(places)}, zapisano {saved} nowych (query: {args.query})"
+            warning = (
+                f" ⚠️ Obszar za duzy — {stats['depth_saturated']} podobszar(ow) nadal nasyconych."
+                f" Zaznacz mniejszy prostokat aby uzyskac pelne wyniki."
+                if stats["depth_saturated"] else ""
+            )
+            summary = (
+                f"Znaleziono {stats['found']}, zapisano {stats['saved']} nowych"
+                f"{', podzielono na ' + str(stats['areas']) + ' podobszarow' if stats['subdivisions'] else ''}"
+                f" (query: {args.query}){warning}"
+            )
+        else:
+            # No bounding box — flat scrape (no subdivision possible)
+            places = search_places(api_key, args.query, None, None)
+            db = get_db()
+            saved = 0
+            for i, place in enumerate(places):
+                if save_business(db, place, args.query):
+                    saved += 1
+                print(json.dumps({"status": "progress", "current": i + 1, "total": len(places)}), flush=True)
+            db.commit()
+            db.close()
+            summary = f"Znaleziono {len(places)}, zapisano {saved} nowych (query: {args.query})"
+
         log_operation("done", summary, op_id)
-        print(json.dumps({"status": "done", "found": len(places), "saved": saved}), flush=True)
+        print(json.dumps({"status": "done", "summary": summary}), flush=True)
 
     except Exception as e:
         log_operation("error", str(e), op_id)
