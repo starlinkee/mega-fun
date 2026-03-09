@@ -5,3 +5,6 @@
 # Co 30 sekund (odkomentuj obie linie poniżej i zakomentuj powyższą):
 # * * * * * cd /opt/mega-fun && /opt/mega-fun/venv/bin/python scripts/send_campaign.py >> /var/log/mega-fun-cron.log 2>&1
 # * * * * * sleep 30 && cd /opt/mega-fun && /opt/mega-fun/venv/bin/python scripts/send_campaign.py >> /var/log/mega-fun-cron.log 2>&1
+
+# Reset dziennego licznika emaili o północy
+0 0 * * * cd /opt/mega-fun && /opt/mega-fun/venv/bin/python scripts/reset_daily_sent.py >> /var/log/mega-fun-cron.log 2>&1

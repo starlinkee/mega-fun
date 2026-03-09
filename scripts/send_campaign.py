@@ -62,8 +62,36 @@ def promote_next_queued(db):
         print(f"Promoted campaign {queued['id']} to active")
 
 
+def get_daily_limit(db):
+    """Return global daily email limit (0 = unlimited)."""
+    row = db.execute("SELECT value FROM settings WHERE key = 'daily_email_limit'").fetchone()
+    if row and row["value"]:
+        try:
+            return int(row["value"])
+        except ValueError:
+            pass
+    return 0
+
+
+def get_total_sent_today(db):
+    """Return total emails sent today across all mailboxes."""
+    row = db.execute(
+        "SELECT COALESCE(SUM(daily_sent), 0) FROM mailboxes"
+    ).fetchone()
+    return row[0]
+
+
 def main():
     db = get_db()
+
+    # Check global daily email limit
+    daily_limit = get_daily_limit(db)
+    if daily_limit > 0:
+        total_sent = get_total_sent_today(db)
+        if total_sent >= daily_limit:
+            db.close()
+            print(f"Daily email limit reached ({total_sent}/{daily_limit}). Skipping.")
+            return
 
     # Find the active campaign (oldest first)
     campaign = db.execute(
@@ -88,6 +116,11 @@ def main():
 
     sent_count = 0
     for mb in mailboxes:
+        # Re-check global daily limit before each send
+        if daily_limit > 0 and get_total_sent_today(db) >= daily_limit:
+            print(f"Daily email limit reached ({daily_limit}). Stopping this round.")
+            break
+
         # Pick one pending email for this campaign
         pending = db.execute(
             """SELECT ce.id AS ce_id, e.email AS recipient

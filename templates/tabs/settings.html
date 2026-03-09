@@ -48,7 +48,7 @@
     </div>
 </div>
 
-<!-- Scrapowanie emaili -->
+<!-- Scrapowanie emaili + Limit dzienny -->
 <div class="row">
     <div class="col-md-6 mb-3">
         <div class="card">
@@ -63,6 +63,25 @@
                     </div>
                     <button type="submit" class="btn btn-primary btn-sm">Zapisz</button>
                     <span class="form-status ms-2" id="emailScrapingStatus"></span>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dzienny limit emaili -->
+    <div class="col-md-6 mb-3">
+        <div class="card">
+            <div class="card-header">Dzienny limit wysyłki emaili</div>
+            <div class="card-body">
+                <form id="dailyLimitForm" method="POST" action="/settings/daily-email-limit">
+                    <div class="mb-3">
+                        <label class="form-label">Maksymalna liczba emaili dziennie</label>
+                        <input type="number" class="form-control" name="daily_email_limit"
+                               value="{{ settings.get('daily_email_limit', '0') }}" min="0">
+                        <div class="form-text">Globalny limit wysłanych emaili na dzień ze wszystkich skrzynek łącznie (0 = bez limitu)</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">Zapisz</button>
+                    <span class="form-status ms-2" id="dailyLimitStatus"></span>
                 </form>
             </div>
         </div>
@@ -156,6 +175,32 @@ document.getElementById('emailScrapingForm').addEventListener('submit', function
     const form = this;
     const btn = form.querySelector('button[type="submit"]');
     const status = document.getElementById('emailScrapingStatus');
+
+    btn.disabled = true;
+    showStatus(status, 'Zapisywanie...', 'loading');
+
+    fetch(form.action, { method: 'POST', body: new FormData(form) })
+        .then(r => r.json().catch(() => ({ ok: r.ok })))
+        .then(data => {
+            btn.disabled = false;
+            if (data.error) {
+                showStatus(status, data.error, 'error');
+            } else {
+                showStatus(status, 'Zapisano pomyślnie!', 'success');
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            showStatus(status, 'Błąd: ' + err.message, 'error');
+        });
+});
+
+// --- Daily email limit form ---
+document.getElementById('dailyLimitForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const form = this;
+    const btn = form.querySelector('button[type="submit"]');
+    const status = document.getElementById('dailyLimitStatus');
 
     btn.disabled = true;
     showStatus(status, 'Zapisywanie...', 'loading');

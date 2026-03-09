@@ -576,6 +576,20 @@ def save_email_scraping_settings():
     return jsonify({"ok": True})
 
 
+@main_bp.route("/settings/daily-email-limit", methods=["POST"])
+def save_daily_email_limit():
+    limit = request.form.get("daily_email_limit", "0").strip()
+    try:
+        limit = str(max(0, int(limit)))
+    except ValueError:
+        limit = "0"
+    db = get_db()
+    db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('daily_email_limit', ?)", (limit,))
+    db.commit()
+    db.close()
+    return jsonify({"ok": True})
+
+
 @main_bp.route("/settings/mailbox", methods=["POST"])
 def add_mailbox():
     email = request.form.get("email", "").strip()
