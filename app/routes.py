@@ -2,14 +2,42 @@ import subprocess
 import sys
 import os
 
-from flask import Blueprint, render_template, request, jsonify, redirect, url_for
+from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session
 from app.db import get_db
 from app.crypto import encrypt, decrypt
+from config import APP_PASSWORD
 
 main_bp = Blueprint("main", __name__)
 
 # Track running scrape processes {op_id: Popen}
 _scrape_processes = {}
+
+
+@main_bp.before_app_request
+def require_login():
+    allowed = ("main.login", "static")
+    if request.endpoint in allowed:
+        return
+    if not session.get("authenticated"):
+        return redirect(url_for("main.login"))
+
+
+@main_bp.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        if password == APP_PASSWORD:
+            session["authenticated"] = True
+            return redirect(url_for("main.index"))
+        error = "Nieprawidłowe hasło"
+    return render_template("login.html", error=error)
+
+
+@main_bp.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("main.login"))
 
 
 @main_bp.route("/")
