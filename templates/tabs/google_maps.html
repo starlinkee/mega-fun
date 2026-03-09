@@ -1,0 +1,348 @@
+{% extends "base.html" %}
+{% block content %}
+<h4>Scraping Google Maps</h4>
+
+<!-- Gorna czesc — podzielona na lewy (formularz) i prawy (mapa) -->
+<div class="row mb-3">
+    <!-- LEWA STRONA — formularz scrapowania -->
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header">Nowe wyszukiwanie</div>
+            <div class="card-body">
+                <form id="scrapeForm">
+                    <div class="mb-2">
+                        <label class="form-label">Zapytanie (np. "restauracje")</label>
+                        <input type="text" name="query" id="scrapeQuery" class="form-control" required
+                               placeholder="restauracje">
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label">SW <small class="text-muted">(lat, lng)</small></label>
+                            <input type="text" id="coordsSW" class="form-control form-control-sm" placeholder="48.1, 16.3">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">NE <small class="text-muted">(lat, lng)</small></label>
+                            <input type="text" id="coordsNE" class="form-control form-control-sm" placeholder="48.3, 16.6">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100" id="scrapeBtn">Szukaj</button>
+                </form>
+                <div id="scrapeStatus" class="mt-2" style="display:none;">
+                    <div class="d-flex align-items-center gap-2 text-success">
+                        <div class="spinner-border spinner-border-sm" role="status"></div>
+                        <span id="scrapeStatusText"><strong>Scrapowanie w toku...</strong></span>
+                    </div>
+                </div>
+                <div id="scrapeResult" class="mt-2" style="display:none;"></div>
+                <hr class="my-2">
+                <small class="text-muted">Shift + przeciagnij na mapie aby narysowac obszar</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- PRAWA STRONA — mapa Google Maps z prostokatami scrapow -->
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Mapa scrapowanych obszarow</span>
+                <small class="text-muted" id="mapAreasCount"></small>
+            </div>
+            <div class="card-body p-0">
+                <div id="scrapeMap" style="width:100%; height:400px; background:#e9ecef; display:flex; align-items:center; justify-content:center;">
+                    <span class="text-muted">Ladowanie mapy...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Dolna czesc — zadania scrapowania -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span id="tasksCount">Zadania scrapowania (0)</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadTasks()">Odswiez</button>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-striped table-sm table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Zapytanie</th>
+                        <th>Status</th>
+                        <th>Szczegoly</th>
+                        <th>Rozpoczeto</th>
+                        <th>Zakonczono</th>
+                    </tr>
+                </thead>
+                <tbody id="tasksTableBody">
+                    <tr><td colspan="6" class="text-center text-muted">Ladowanie...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let map = null;
+let scrapeRectangles = [];
+
+// ===================== GOOGLE MAPS =====================
+
+function initMap(apiKey) {
+    if (!apiKey) {
+        document.getElementById('scrapeMap').innerHTML =
+            '<div class="text-center text-muted p-3">Brak klucza API.<br>Ustaw go w <a href="/settings">Ustawieniach</a>.</div>';
+        return;
+    }
+
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&callback=onMapsLoaded`;
+    script.async = true;
+    script.defer = true;
+    document.head.appendChild(script);
+}
+
+function onMapsLoaded() {
+    map = new google.maps.Map(document.getElementById('scrapeMap'), {
+        center: {lat: 52.0, lng: 19.0},
+        zoom: 6,
+        mapTypeControl: true,
+        streetViewControl: false,
+    });
+
+    // Shift+drag to draw rectangle -> fill coordinate fields
+    let drawStart = null;
+    let drawRect = null;
+
+    map.addListener('mousedown', function(e) {
+        if (e.domEvent.shiftKey) {
+            drawStart = e.latLng;
+            map.setOptions({draggable: false});
+            if (drawRect) drawRect.setMap(null);
+            drawRect = new google.maps.Rectangle({
+                map: map,
+                bounds: new google.maps.LatLngBounds(drawStart, drawStart),
+                strokeColor: '#0d6efd',
+                strokeWeight: 2,
+                fillColor: '#0d6efd',
+                fillOpacity: 0.15,
+            });
+        }
+    });
+
+    map.addListener('mousemove', function(e) {
+        if (drawStart && drawRect) {
+            drawRect.setBounds(new google.maps.LatLngBounds(
+                new google.maps.LatLng(
+                    Math.min(drawStart.lat(), e.latLng.lat()),
+                    Math.min(drawStart.lng(), e.latLng.lng())
+                ),
+                new google.maps.LatLng(
+                    Math.max(drawStart.lat(), e.latLng.lat()),
+                    Math.max(drawStart.lng(), e.latLng.lng())
+                )
+            ));
+        }
+    });
+
+    window.addEventListener('mouseup', function(e) {
+        if (drawStart && drawRect) {
+            map.setOptions({draggable: true});
+            const bounds = drawRect.getBounds();
+            const sw = bounds.getSouthWest();
+            const ne = bounds.getNorthEast();
+            document.getElementById('coordsSW').value = `${sw.lat().toFixed(4)}, ${sw.lng().toFixed(4)}`;
+            document.getElementById('coordsNE').value = `${ne.lat().toFixed(4)}, ${ne.lng().toFixed(4)}`;
+            drawStart = null;
+        }
+    });
+
+    loadScrapeAreas();
+}
+
+window.onMapsLoaded = onMapsLoaded;
+
+function loadScrapeAreas() {
+    fetch('/api/scrape-areas')
+        .then(r => r.json())
+        .then(data => {
+            scrapeRectangles.forEach(r => r.setMap(null));
+            scrapeRectangles = [];
+
+            const areas = data.areas || [];
+            document.getElementById('mapAreasCount').textContent =
+                areas.length ? `${areas.length} poprzednich obszarow` : '';
+
+            const bounds = new google.maps.LatLngBounds();
+            let hasBounds = false;
+
+            const queryColors = {};
+            const colors = ['#dc3545', '#fd7e14', '#ffc107', '#198754', '#0dcaf0', '#6f42c1', '#d63384', '#20c997'];
+            let colorIdx = 0;
+
+            areas.forEach(area => {
+                if (!queryColors[area.source_query]) {
+                    queryColors[area.source_query] = colors[colorIdx % colors.length];
+                    colorIdx++;
+                }
+                const color = queryColors[area.source_query];
+
+                const rect = new google.maps.Rectangle({
+                    map: map,
+                    bounds: {
+                        south: area.sw_lat,
+                        west: area.sw_lng,
+                        north: area.ne_lat,
+                        east: area.ne_lng,
+                    },
+                    strokeColor: color,
+                    strokeWeight: 2,
+                    fillColor: color,
+                    fillOpacity: 0.12,
+                    clickable: true,
+                });
+
+                const info = new google.maps.InfoWindow({
+                    content: `<div style="font-size:13px">
+                        <strong>${esc(area.source_query)}</strong><br>
+                        Wynikow: ${area.results_count}<br>
+                        <small>${area.created_at || ''}</small>
+                    </div>`,
+                });
+
+                rect.addListener('click', function(e) {
+                    info.setPosition(e.latLng);
+                    info.open(map);
+                });
+
+                scrapeRectangles.push(rect);
+                bounds.extend({lat: area.sw_lat, lng: area.sw_lng});
+                bounds.extend({lat: area.ne_lat, lng: area.ne_lng});
+                hasBounds = true;
+            });
+
+            if (hasBounds) {
+                map.fitBounds(bounds, 40);
+            }
+        });
+}
+
+// ===================== SCRAPE TASKS =====================
+
+function loadTasks() {
+    fetch('/api/scrape-tasks')
+        .then(r => r.json())
+        .then(data => {
+            const tasks = data.tasks || [];
+            document.getElementById('tasksCount').textContent = `Zadania scrapowania (${tasks.length})`;
+            const tbody = document.getElementById('tasksTableBody');
+
+            if (!tasks.length) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Brak zadan</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = tasks.map(t => {
+                let badge = 'secondary';
+                let label = t.status;
+                if (t.status === 'running') { badge = 'primary'; label = 'W toku'; }
+                else if (t.status === 'done') { badge = 'success'; label = 'Zakonczone'; }
+                else if (t.status === 'error') { badge = 'danger'; label = 'Blad'; }
+
+                return `<tr>
+                    <td>${t.id}</td>
+                    <td>${esc(t.details || '')}</td>
+                    <td><span class="badge bg-${badge}">${label}</span></td>
+                    <td><small>${esc(t.details || '')}</small></td>
+                    <td><small>${t.started_at || ''}</small></td>
+                    <td><small>${t.finished_at || '-'}</small></td>
+                </tr>`;
+            }).join('');
+        });
+}
+
+function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+// --- Scrape form ---
+document.getElementById('scrapeForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const query = document.getElementById('scrapeQuery').value.trim();
+    const coordsSW = document.getElementById('coordsSW').value.trim();
+    const coordsNE = document.getElementById('coordsNE').value.trim();
+    if (!query) return;
+
+    const btn = document.getElementById('scrapeBtn');
+    const statusDiv = document.getElementById('scrapeStatus');
+    const resultDiv = document.getElementById('scrapeResult');
+    btn.disabled = true;
+    statusDiv.style.display = 'block';
+    resultDiv.style.display = 'none';
+    document.getElementById('scrapeStatusText').innerHTML = '<strong>Scrapowanie w toku...</strong>';
+
+    const formData = new FormData();
+    formData.set('query', query);
+    if (coordsSW) formData.set('coords_sw', coordsSW);
+    if (coordsNE) formData.set('coords_ne', coordsNE);
+
+    fetch('/google-maps/scrape', {method: 'POST', body: formData})
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                statusDiv.style.display = 'none';
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = `<div class="alert alert-danger py-1">${esc(data.error)}</div>`;
+                btn.disabled = false;
+                return;
+            }
+            pollStatus(data.op_id);
+        })
+        .catch(err => {
+            statusDiv.style.display = 'none';
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `<div class="alert alert-danger py-1">Blad: ${esc(err.message)}</div>`;
+            btn.disabled = false;
+        });
+});
+
+function pollStatus(opId) {
+    const interval = setInterval(() => {
+        fetch(`/google-maps/scrape/status/${opId}`)
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('scrapeStatusText').innerHTML = '<strong>' + esc(data.details || 'Scrapowanie...') + '</strong>';
+
+                if (data.status === 'done' || data.status === 'error') {
+                    clearInterval(interval);
+                    document.getElementById('scrapeStatus').style.display = 'none';
+                    document.getElementById('scrapeBtn').disabled = false;
+
+                    const cls = data.status === 'done' ? 'alert-success' : 'alert-danger';
+                    const resultDiv = document.getElementById('scrapeResult');
+                    resultDiv.style.display = 'block';
+                    resultDiv.innerHTML = `<div class="alert ${cls} py-1">${esc(data.details)}</div>`;
+
+                    if (data.status === 'done') {
+                        loadTasks();
+                        if (map) loadScrapeAreas();
+                    }
+                }
+            });
+    }, 2000);
+}
+
+// --- Init ---
+loadTasks();
+
+// Load Google Maps
+fetch('/api/maps-key')
+    .then(r => r.json())
+    .then(data => initMap(data.key));
+</script>
+{% endblock %}

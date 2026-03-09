@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+    th.sortable:hover { background: rgba(0,0,0,.05); }
+    th.sortable::after { content: ' \2195'; opacity: .3; font-size: .8em; }
+    th.sort-asc::after { content: ' \2191'; opacity: 1; }
+    th.sort-desc::after { content: ' \2193'; opacity: 1; }
+</style>
+<h4>Biznesy</h4>
+
+<div class="card">
+    <div class="card-header">
+        <div class="row g-2 align-items-center">
+            <div class="col-auto"><span id="bizCount">Wyszukane biznesy (0)</span></div>
+            <div class="col-md-3">
+                <input type="text" id="searchInput" class="form-control form-control-sm"
+                       placeholder="Szukaj (nazwa, adres, telefon...)">
+            </div>
+            <div class="col-md-3">
+                <select id="categoryFilter" class="form-select form-select-sm">
+                    <option value="">Wszystkie kategorie</option>
+                </select>
+            </div>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-striped table-sm table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th class="sortable" data-col="id">#</th>
+                        <th class="sortable" data-col="name">Nazwa</th>
+                        <th class="sortable" data-col="address">Adres</th>
+                        <th class="sortable" data-col="phone">Telefon</th>
+                        <th>Strona</th>
+                        <th class="sortable" data-col="category">Kategoria</th>
+                        <th class="sortable" data-col="category_google">Kategoria Google</th>
+                        <th class="sortable" data-col="source_query">Zapytanie</th>
+                        <th class="sortable" data-col="created_at">Dodano</th>
+                    </tr>
+                </thead>
+                <tbody id="bizTableBody">
+                    <tr><td colspan="9" class="text-center text-muted">Ladowanie...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card-footer">
+        <div class="d-flex justify-content-between align-items-center">
+            <small class="text-muted" id="pageInfo"></small>
+            <div class="btn-group btn-group-sm" id="pagination"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PER_PAGE = 50;
+let currentPage = 1;
+let debounceTimer = null;
+let currentSort = {col: null, asc: true};
+
+function loadBusinesses(page) {
+    currentPage = page || 1;
+    const search = document.getElementById('searchInput').value;
+    const cat = document.getElementById('categoryFilter').value;
+    const params = new URLSearchParams({page: currentPage, per_page: PER_PAGE});
+    if (search) params.set('search', search);
+    if (cat) params.set('category', cat);
+
+    fetch('/api/businesses?' + params)
+        .then(r => r.json())
+        .then(data => {
+            renderTable(data.businesses);
+            renderPagination(data.page, data.pages, data.total);
+            updateCategoryFilter(data.categories);
+            document.getElementById('bizCount').textContent =
+                `Wyszukane biznesy (${data.total})`;
+        });
+}
+
+let lastBusinesses = [];
+
+function renderTable(businesses) {
+    lastBusinesses = businesses;
+    const tbody = document.getElementById('bizTableBody');
+    if (!businesses.length) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">Brak danych</td></tr>';
+        return;
+    }
+
+    let sorted = [...businesses];
+    if (currentSort.col) {
+        sorted.sort((a, b) => {
+            const va = (a[currentSort.col] || '').toString().toLowerCase();
+            const vb = (b[currentSort.col] || '').toString().toLowerCase();
+            if (va < vb) return currentSort.asc ? -1 : 1;
+            if (va > vb) return currentSort.asc ? 1 : -1;
+            return 0;
+        });
+    }
+
+    tbody.innerHTML = sorted.map(b => `
+        <tr>
+            <td>${b.id}</td>
+            <td>${esc(b.name)}</td>
+            <td>${esc(b.address)}</td>
+            <td>${esc(b.phone || '')}</td>
+            <td>${b.website ? `<a href="${esc(b.website)}" target="_blank">link</a>` : ''}</td>
+            <td><small>${esc(b.category || '')}</small></td>
+            <td><small>${esc(b.category_google || '')}</small></td>
+            <td><small class="text-muted">${esc(b.source_query || '')}</small></td>
+            <td><small>${b.created_at || ''}</small></td>
+        </tr>
+    `).join('');
+
+    updateSortIndicators();
+}
+
+function updateSortIndicators() {
+    document.querySelectorAll('th.sortable').forEach(th => {
+        th.classList.remove('sort-asc', 'sort-desc');
+        if (th.dataset.col === currentSort.col) {
+            th.classList.add(currentSort.asc ? 'sort-asc' : 'sort-desc');
+        }
+    });
+}
+
+document.querySelectorAll('th.sortable').forEach(th => {
+    th.style.cursor = 'pointer';
+    th.addEventListener('click', () => {
+        const col = th.dataset.col;
+        if (currentSort.col === col) {
+            currentSort.asc = !currentSort.asc;
+        } else {
+            currentSort.col = col;
+            currentSort.asc = true;
+        }
+        renderTable(lastBusinesses);
+    });
+});
+
+function renderPagination(page, pages, total) {
+    const info = document.getElementById('pageInfo');
+    const nav = document.getElementById('pagination');
+    info.textContent = `Strona ${page} z ${pages} (${total} wynikow)`;
+
+    if (pages <= 1) { nav.innerHTML = ''; return; }
+
+    let html = '';
+    html += `<button class="btn btn-outline-secondary" ${page<=1?'disabled':''} onclick="loadBusinesses(${page-1})">&laquo;</button>`;
+
+    let start = Math.max(1, page - 2);
+    let end = Math.min(pages, page + 2);
+    for (let i = start; i <= end; i++) {
+        html += `<button class="btn btn-outline-secondary ${i===page?'active':''}" onclick="loadBusinesses(${i})">${i}</button>`;
+    }
+
+    html += `<button class="btn btn-outline-secondary" ${page>=pages?'disabled':''} onclick="loadBusinesses(${page+1})">&raquo;</button>`;
+    nav.innerHTML = html;
+}
+
+function updateCategoryFilter(categories) {
+    const sel = document.getElementById('categoryFilter');
+    const current = sel.value;
+    const opts = ['<option value="">Wszystkie kategorie</option>'];
+    categories.forEach(c => {
+        opts.push(`<option value="${esc(c)}" ${c===current?'selected':''}>${esc(c)}</option>`);
+    });
+    sel.innerHTML = opts.join('');
+}
+
+function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+document.getElementById('searchInput').addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => loadBusinesses(1), 300);
+});
+document.getElementById('categoryFilter').addEventListener('change', () => loadBusinesses(1));
+
+loadBusinesses(1);
+</script>
+{% endblock %}

@@ -1,0 +1,16 @@
+body {
+    background-color: #f8f9fa;
+}
+
+.card {
+    border-radius: 8px;
+}
+
+.table th {
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.table td {
+    font-size: 0.85rem;
+}

@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+{% block content %}
+<h4>Ustawienia</h4>
+
+<div class="row">
+    <!-- Google Places API Key -->
+    <div class="col-md-6 mb-3">
+        <div class="card">
+            <div class="card-header">Google Places API Key</div>
+            <div class="card-body">
+                <form id="apiKeyForm" method="POST" action="/settings/api-key">
+                    <div class="mb-3">
+                        <input type="password" class="form-control" name="api_key"
+                               placeholder="Klucz do Google Places API (scrapowanie)...">
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">Zapisz</button>
+                    <span class="form-status ms-2" id="apiKeyStatus"></span>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Google Maps API Key -->
+    <div class="col-md-6 mb-3">
+        <div class="card">
+            <div class="card-header">Google Maps API Key</div>
+            <div class="card-body">
+                <form id="mapsKeyForm" method="POST" action="/settings/google-maps-key">
+                    <div class="mb-3">
+                        <input type="password" class="form-control" name="google_maps_key"
+                               placeholder="Klucz do Google Maps JS API (mapa)...">
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">Zapisz</button>
+                    <span class="form-status ms-2" id="mapsKeyStatus"></span>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dodaj skrzynkę -->
+    <div class="col-md-6 mb-3">
+        <div class="card">
+            <div class="card-header">Dodaj skrzynkę mailową</div>
+            <div class="card-body">
+                <form id="mailboxForm" method="POST" action="/settings/mailbox">
+                    <div class="mb-2">
+                        <input type="email" class="form-control form-control-sm" name="email" placeholder="Email" required>
+                    </div>
+                    <div class="mb-2">
+                        <input type="password" class="form-control form-control-sm" name="password" placeholder="Hasło SMTP" required>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-8">
+                            <input type="text" class="form-control form-control-sm" name="smtp_server" value="smtp.purelymail.com" placeholder="SMTP serwer">
+                        </div>
+                        <div class="col-4">
+                            <input type="number" class="form-control form-control-sm" name="smtp_port" value="587" placeholder="Port">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-success btn-sm">Dodaj</button>
+                    <span class="form-status ms-2" id="mailboxStatus"></span>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Lista skrzynek -->
+<div class="card">
+    <div class="card-header">Skrzynki mailowe ({{ mailboxes|length }})</div>
+    <div class="card-body p-0">
+        <table class="table table-striped table-sm mb-0">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Email</th>
+                    <th>SMTP</th>
+                    <th>Port</th>
+                    <th>Aktywna</th>
+                    <th>Wysłano dziś</th>
+                    <th>Ostatnia wysyłka</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in mailboxes %}
+                <tr id="mailbox-row-{{ m.id }}">
+                    <td>{{ m.id }}</td>
+                    <td>{{ m.email }}</td>
+                    <td>{{ m.smtp_server }}</td>
+                    <td>{{ m.smtp_port }}</td>
+                    <td>{{ "Tak" if m.active else "Nie" }}</td>
+                    <td>{{ m.daily_sent }}</td>
+                    <td>{{ m.last_sent_at or "—" }}</td>
+                    <td>
+                        <button type="button" class="btn btn-danger btn-sm" onclick="deleteMailbox({{ m.id }}, this)">Usuń</button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="text-center text-muted">Brak skrzynek</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showStatus(el, message, type) {
+    if (type === 'loading') {
+        el.innerHTML = '<span class="text-success"><span class="spinner-border spinner-border-sm"></span> <strong>' + message + '</strong></span>';
+    } else if (type === 'success') {
+        el.innerHTML = '<span class="text-success"><strong>' + message + '</strong></span>';
+        setTimeout(() => { el.innerHTML = ''; }, 4000);
+    } else if (type === 'error') {
+        el.innerHTML = '<span class="text-danger"><strong>' + message + '</strong></span>';
+        setTimeout(() => { el.innerHTML = ''; }, 5000);
+    }
+}
+
+// --- API Key form ---
+document.getElementById('apiKeyForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const form = this;
+    const btn = form.querySelector('button[type="submit"]');
+    const status = document.getElementById('apiKeyStatus');
+
+    btn.disabled = true;
+    showStatus(status, 'Zapisywanie...', 'loading');
+
+    fetch(form.action, { method: 'POST', body: new FormData(form) })
+        .then(r => r.json().catch(() => ({ ok: r.ok })))
+        .then(data => {
+            btn.disabled = false;
+            if (data.error) {
+                showStatus(status, data.error, 'error');
+            } else {
+                showStatus(status, 'Zapisano pomyślnie!', 'success');
+                form.reset();
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            showStatus(status, 'Błąd: ' + err.message, 'error');
+        });
+});
+
+// --- Google Maps API Key form ---
+document.getElementById('mapsKeyForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const form = this;
+    const btn = form.querySelector('button[type="submit"]');
+    const status = document.getElementById('mapsKeyStatus');
+
+    btn.disabled = true;
+    showStatus(status, 'Zapisywanie...', 'loading');
+
+    fetch(form.action, { method: 'POST', body: new FormData(form) })
+        .then(r => r.json().catch(() => ({ ok: r.ok })))
+        .then(data => {
+            btn.disabled = false;
+            if (data.error) {
+                showStatus(status, data.error, 'error');
+            } else {
+                showStatus(status, 'Zapisano pomyślnie!', 'success');
+                form.reset();
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            showStatus(status, 'Błąd: ' + err.message, 'error');
+        });
+});
+
+// --- Mailbox form ---
+document.getElementById('mailboxForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const form = this;
+    const btn = form.querySelector('button[type="submit"]');
+    const status = document.getElementById('mailboxStatus');
+
+    btn.disabled = true;
+    showStatus(status, 'Dodawanie skrzynki...', 'loading');
+
+    fetch(form.action, { method: 'POST', body: new FormData(form) })
+        .then(r => r.json().catch(() => ({ ok: r.ok })))
+        .then(data => {
+            btn.disabled = false;
+            if (data.error) {
+                showStatus(status, data.error, 'error');
+            } else {
+                showStatus(status, 'Skrzynka dodana pomyślnie!', 'success');
+                setTimeout(() => location.reload(), 1000);
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            showStatus(status, 'Błąd: ' + err.message, 'error');
+        });
+});
+
+// --- Delete mailbox ---
+function deleteMailbox(id, btn) {
+    if (!confirm('Usunąć?')) return;
+    btn.disabled = true;
+    btn.textContent = 'Usuwanie...';
+    btn.classList.replace('btn-danger', 'btn-warning');
+
+    fetch('/settings/mailbox/' + id + '/delete', { method: 'POST' })
+        .then(r => r.json().catch(() => ({ ok: r.ok })))
+        .then(data => {
+            if (data.error) {
+                btn.disabled = false;
+                btn.textContent = 'Usuń';
+                btn.classList.replace('btn-warning', 'btn-danger');
+                alert(data.error);
+            } else {
+                const row = document.getElementById('mailbox-row-' + id);
+                row.style.backgroundColor = '#d1e7dd';
+                row.querySelector('td:last-child').innerHTML = '<span class="text-success"><strong>Usunięto!</strong></span>';
+                setTimeout(() => row.remove(), 1500);
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            btn.textContent = 'Usuń';
+            btn.classList.replace('btn-warning', 'btn-danger');
+            alert('Błąd: ' + err.message);
+        });
+}
+</script>
+{% endblock %}
