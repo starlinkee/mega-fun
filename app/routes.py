@@ -1,11 +1,28 @@
 import subprocess
 import sys
 import os
+import re
 
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session
 from app.db import get_db
 from app.crypto import encrypt, decrypt
 from config import APP_PASSWORD
+
+
+def _extract_source_query(details):
+    """Extract source_query from operations_log details field.
+    Handles both formats:
+      - initial: 'Query: restauracja'
+      - final:   'Znaleziono 60, zapisano 60 nowych (query: restauracja)'
+    """
+    if not details:
+        return None
+    m = re.search(r'\(query:\s*(.+?)\)\s*$', details)
+    if m:
+        return m.group(1).strip()
+    if details.startswith("Query: "):
+        return details[7:].strip()
+    return None
 
 main_bp = Blueprint("main", __name__)
 
@@ -184,7 +201,7 @@ def api_scrape_areas():
 def api_maps_key():
     """Return decrypted Google Maps API key for Maps JS API."""
     db = get_db()
-    row = db.execute("SELECT value FROM settings WHERE key = 'google_maps_key'").fetchone()
+    row = db.execute("SELECT value FROM settings WHERE key = 'api_key'").fetchone()
     db.close()
     if row and row["value"]:
         return jsonify({"key": decrypt(row["value"])})
@@ -198,13 +215,57 @@ def tab_businesses():
 
 @main_bp.route("/api/scrape-tasks")
 def api_scrape_tasks():
-    """Return all scrape operations from operations_log."""
+    """Return all scrape operations from operations_log with email counts."""
     db = get_db()
     rows = db.execute(
-        "SELECT * FROM operations_log ORDER BY started_at DESC"
+        "SELECT * FROM operations_log WHERE operation_type = 'google_maps_scrape' ORDER BY started_at DESC"
+    ).fetchall()
+    tasks = []
+    for row in rows:
+        t = dict(row)
+        source_query = _extract_source_query(t.get("details"))
+        t["source_query"] = source_query
+        if source_query:
+            count = db.execute(
+                """SELECT COUNT(DISTINCT e.id) FROM emails e
+                   JOIN businesses b ON e.business_id = b.id
+                   WHERE b.source_query = ?""",
+                (source_query,),
+            ).fetchone()[0]
+        else:
+            count = 0
+        t["email_count"] = count
+        tasks.append(t)
+    db.close()
+    return jsonify({"tasks": tasks})
+
+
+@main_bp.route("/api/scrape-tasks/<int:op_id>/emails")
+def api_scrape_task_emails(op_id):
+    """Return emails collected in a specific scrape task (by source_query)."""
+    db = get_db()
+    row = db.execute("SELECT * FROM operations_log WHERE id = ?", (op_id,)).fetchone()
+    if not row:
+        db.close()
+        return jsonify({"error": "Nie znaleziono zadania"}), 404
+
+    source_query = _extract_source_query(row["details"])
+
+    if not source_query:
+        db.close()
+        return jsonify({"emails": [], "source_query": None})
+
+    emails = db.execute(
+        """SELECT e.id, e.email, e.source, e.created_at,
+                  b.name AS business_name, b.website
+           FROM emails e
+           JOIN businesses b ON e.business_id = b.id
+           WHERE b.source_query = ?
+           ORDER BY e.created_at DESC""",
+        (source_query,),
     ).fetchall()
     db.close()
-    return jsonify({"tasks": [dict(r) for r in rows]})
+    return jsonify({"emails": [dict(e) for e in emails], "source_query": source_query})
 
 
 @main_bp.route("/email-scraping")
@@ -212,14 +273,233 @@ def tab_email_scraping():
     return render_template("tabs/email_scraping.html", active_tab="email_scraping")
 
 
+# Track running email scrape processes {op_id: Popen}
+_email_scrape_processes = {}
+
+
+@main_bp.route("/email-scraping/scrape", methods=["POST"])
+def start_email_scrape():
+    """Start email scraping as subprocess."""
+    source_query = request.form.get("source_query", "").strip()
+    business_ids = request.form.get("business_ids", "").strip()
+
+    db = get_db()
+    cursor = db.execute(
+        "INSERT INTO operations_log (operation_type, status, details) VALUES ('email_scrape', 'running', ?)",
+        (f"Scraping emaili{' (query: ' + source_query + ')' if source_query else ''}",),
+    )
+    op_id = cursor.lastrowid
+    db.commit()
+
+    # Read max_pages setting
+    row = db.execute("SELECT value FROM settings WHERE key = 'email_max_pages'").fetchone()
+    max_pages = row["value"] if row else "10"
+    db.close()
+
+    script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "scrape_emails.py")
+    cmd = [sys.executable, script, "--op-id", str(op_id), "--max-pages", max_pages]
+    if source_query:
+        cmd += ["--source-query", source_query]
+    if business_ids:
+        cmd += ["--business-ids", business_ids]
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    _email_scrape_processes[op_id] = proc
+
+    return jsonify({"op_id": op_id, "status": "running"})
+
+
+@main_bp.route("/email-scraping/scrape/status/<int:op_id>")
+def email_scrape_status(op_id):
+    """Check email scrape operation status."""
+    db = get_db()
+    row = db.execute("SELECT * FROM operations_log WHERE id = ?", (op_id,)).fetchone()
+    db.close()
+
+    if not row:
+        return jsonify({"error": "Operacja nie znaleziona"}), 404
+
+    result = {"op_id": op_id, "status": row["status"], "details": row["details"]}
+
+    proc = _email_scrape_processes.get(op_id)
+    if proc and proc.poll() is not None:
+        _email_scrape_processes.pop(op_id, None)
+
+    return jsonify(result)
+
+
+@main_bp.route("/api/emails")
+def api_emails():
+    """AJAX endpoint: list emails with pagination, filtering, search."""
+    db = get_db()
+
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 50, type=int)
+    search = request.args.get("search", "").strip()
+    source_query = request.args.get("source_query", "").strip()
+
+    per_page = min(per_page, 200)
+    offset = (page - 1) * per_page
+
+    conditions = []
+    params = []
+    if search:
+        conditions.append("(e.email LIKE ? OR b.name LIKE ? OR e.source LIKE ?)")
+        like = f"%{search}%"
+        params.extend([like, like, like])
+    if source_query:
+        conditions.append("b.source_query = ?")
+        params.append(source_query)
+
+    where = ""
+    if conditions:
+        where = "WHERE " + " AND ".join(conditions)
+
+    total = db.execute(
+        f"SELECT COUNT(*) FROM emails e LEFT JOIN businesses b ON e.business_id = b.id {where}", params
+    ).fetchone()[0]
+
+    rows = db.execute(
+        f"""SELECT e.id, e.email, e.source, e.created_at, e.business_id,
+                   b.name AS business_name, b.source_query
+            FROM emails e
+            LEFT JOIN businesses b ON e.business_id = b.id
+            {where}
+            ORDER BY e.created_at DESC LIMIT ? OFFSET ?""",
+        params + [per_page, offset],
+    ).fetchall()
+
+    emails = [dict(r) for r in rows]
+
+    # Distinct source queries for filter
+    queries = [r[0] for r in db.execute(
+        "SELECT DISTINCT b.source_query FROM emails e JOIN businesses b ON e.business_id = b.id WHERE b.source_query IS NOT NULL ORDER BY b.source_query"
+    ).fetchall()]
+
+    db.close()
+
+    return jsonify({
+        "emails": emails,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": (total + per_page - 1) // per_page if per_page else 1,
+        "source_queries": queries,
+    })
+
+
+@main_bp.route("/api/emails/<int:email_id>/delete", methods=["POST"])
+def delete_email(email_id):
+    """Delete a single email."""
+    db = get_db()
+    db.execute("DELETE FROM emails WHERE id = ?", (email_id,))
+    db.commit()
+    db.close()
+    return jsonify({"ok": True})
+
+
+@main_bp.route("/api/email-scrape-tasks")
+def api_email_scrape_tasks():
+    """Return email scrape operations from operations_log."""
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM operations_log WHERE operation_type = 'email_scrape' ORDER BY started_at DESC"
+    ).fetchall()
+    db.close()
+    return jsonify({"tasks": [dict(r) for r in rows]})
+
+
 @main_bp.route("/campaigns")
 def tab_campaigns():
-    return render_template("tabs/campaigns.html", active_tab="campaigns")
+    db = get_db()
+    campaigns = db.execute("SELECT * FROM campaigns ORDER BY created_at DESC").fetchall()
+    campaigns_list = []
+    for c in campaigns:
+        d = dict(c)
+        total = db.execute("SELECT COUNT(*) FROM campaign_emails WHERE campaign_id = ?", (c["id"],)).fetchone()[0]
+        sent = db.execute("SELECT COUNT(*) FROM campaign_emails WHERE campaign_id = ? AND status = 'sent'", (c["id"],)).fetchone()[0]
+        failed = db.execute("SELECT COUNT(*) FROM campaign_emails WHERE campaign_id = ? AND status = 'failed'", (c["id"],)).fetchone()[0]
+        d["total"] = total
+        d["sent"] = sent
+        d["failed"] = failed
+        campaigns_list.append(d)
+    db.close()
+    return render_template("tabs/campaigns.html", active_tab="campaigns", campaigns=campaigns_list)
 
 
-@main_bp.route("/history")
-def tab_history():
-    return render_template("tabs/history.html", active_tab="history")
+@main_bp.route("/campaigns/create", methods=["POST"])
+def create_campaign():
+    name = request.form.get("name", "").strip()
+    subject = request.form.get("subject", "").strip()
+    body = request.form.get("body", "").strip()
+
+    if not name or not subject or not body:
+        return jsonify({"error": "Wypełnij wszystkie pola"}), 400
+
+    db = get_db()
+
+    # If another campaign is already active, queue this one
+    active = db.execute("SELECT id FROM campaigns WHERE status = 'active'").fetchone()
+    status = "queued" if active else "active"
+
+    cursor = db.execute(
+        "INSERT INTO campaigns (name, subject, body_template, status) VALUES (?, ?, ?, ?)",
+        (name, subject, body, status),
+    )
+    campaign_id = cursor.lastrowid
+
+    # Add only emails not yet successfully sent in any previous campaign
+    emails = db.execute(
+        """SELECT id FROM emails
+           WHERE id NOT IN (
+               SELECT email_id FROM campaign_emails WHERE status IN ('sent', 'failed')
+           )"""
+    ).fetchall()
+    for e in emails:
+        db.execute(
+            "INSERT INTO campaign_emails (campaign_id, email_id, status) VALUES (?, ?, 'pending')",
+            (campaign_id, e["id"]),
+        )
+
+    db.commit()
+    count = len(emails)
+    db.close()
+
+    return jsonify({"ok": True, "campaign_id": campaign_id, "emails_queued": count, "status": status})
+
+
+@main_bp.route("/campaigns/<int:campaign_id>/stop", methods=["POST"])
+def stop_campaign(campaign_id):
+    db = get_db()
+    db.execute("UPDATE campaigns SET status = 'stopped' WHERE id = ?", (campaign_id,))
+    db.commit()
+    db.close()
+    return jsonify({"ok": True})
+
+
+@main_bp.route("/campaigns/<int:campaign_id>/resume", methods=["POST"])
+def resume_campaign(campaign_id):
+    db = get_db()
+    # If another campaign is active, queue this one; otherwise activate
+    active = db.execute(
+        "SELECT id FROM campaigns WHERE status = 'active' AND id != ?", (campaign_id,)
+    ).fetchone()
+    new_status = "queued" if active else "active"
+    db.execute("UPDATE campaigns SET status = ? WHERE id = ?", (new_status, campaign_id))
+    db.commit()
+    db.close()
+    return jsonify({"ok": True, "status": new_status})
+
+
+@main_bp.route("/campaigns/<int:campaign_id>/delete", methods=["POST"])
+def delete_campaign(campaign_id):
+    db = get_db()
+    db.execute("DELETE FROM campaign_emails WHERE campaign_id = ?", (campaign_id,))
+    db.execute("DELETE FROM campaigns WHERE id = ?", (campaign_id,))
+    db.commit()
+    db.close()
+    return jsonify({"ok": True})
+
 
 
 @main_bp.route("/settings")
@@ -246,17 +526,19 @@ def save_api_key():
     return redirect(url_for("main.tab_settings"))
 
 
-@main_bp.route("/settings/google-maps-key", methods=["POST"])
-def save_google_maps_key():
-    key = request.form.get("google_maps_key", "").strip()
-    encrypted_key = encrypt(key)
+
+@main_bp.route("/settings/email-scraping", methods=["POST"])
+def save_email_scraping_settings():
+    max_pages = request.form.get("email_max_pages", "10").strip()
+    try:
+        max_pages = str(max(1, min(100, int(max_pages))))
+    except ValueError:
+        max_pages = "10"
     db = get_db()
-    db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('google_maps_key', ?)", (encrypted_key,))
+    db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('email_max_pages', ?)", (max_pages,))
     db.commit()
     db.close()
-    if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.content_type != "application/x-www-form-urlencoded":
-        return jsonify({"ok": True})
-    return redirect(url_for("main.tab_settings"))
+    return jsonify({"ok": True})
 
 
 @main_bp.route("/settings/mailbox", methods=["POST"])
@@ -270,7 +552,7 @@ def add_mailbox():
         db = get_db()
         db.execute(
             "INSERT INTO mailboxes (email, password, smtp_server, smtp_port) VALUES (?, ?, ?, ?)",
-            (email, password, smtp_server, smtp_port),
+            (email, encrypt(password), smtp_server, smtp_port),
         )
         db.commit()
         db.close()

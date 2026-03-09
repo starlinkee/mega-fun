@@ -2,15 +2,358 @@
 {% block content %}
 <h4>Scraping Maili</h4>
 
-<div class="card mb-3">
-    <div class="card-body text-muted text-center" style="min-height:150px;">
-        <p class="mt-5">Górna sekcja — do uzupełnienia w Fazie 4</p>
+<!-- Gorna czesc — panel sterowania + zadania -->
+<div class="row mb-3">
+    <!-- LEWA STRONA — formularz -->
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header">Nowe skanowanie</div>
+            <div class="card-body">
+                <form id="emailScrapeForm">
+                    <div class="mb-2">
+                        <label class="form-label">Filtruj po zapytaniu Google Maps</label>
+                        <select name="source_query" id="sourceQueryFilter" class="form-select">
+                            <option value="">Wszystkie biznesy</option>
+                        </select>
+                    </div>
+                    <div class="mb-2" id="statsRow">
+                        <small class="text-muted" id="bizCount">Ladowanie...</small>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100" id="scrapeBtn">
+                        Skanuj strony www
+                    </button>
+                </form>
+                <div id="scrapeStatus" class="mt-2" style="display:none;">
+                    <div class="d-flex align-items-center gap-2 text-success">
+                        <div class="spinner-border spinner-border-sm" role="status"></div>
+                        <span id="scrapeStatusText"><strong>Skanowanie w toku...</strong></span>
+                    </div>
+                </div>
+                <div id="scrapeResult" class="mt-2" style="display:none;"></div>
+                <hr class="my-2">
+                <small class="text-muted">Skaner odwiedza strony www biznesow i wyciaga adresy email (mailto:, regex na tekscie, podstrony kontaktowe).</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- PRAWA STRONA — zadania scrapowania emaili -->
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span id="tasksCount">Zadania skanowania (0)</span>
+                <button class="btn btn-sm btn-outline-secondary" onclick="loadEmailTasks()">Odswiez</button>
+            </div>
+            <div class="card-body p-0" style="max-height: 280px; overflow-y: auto;">
+                <table class="table table-striped table-sm table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Status</th>
+                            <th>Szczegoly</th>
+                            <th>Rozpoczeto</th>
+                            <th>Zakonczono</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tasksTableBody">
+                        <tr><td colspan="5" class="text-center text-muted">Ladowanie...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 </div>
 
+<!-- Dolna czesc — tabela emaili -->
 <div class="card">
-    <div class="card-body text-muted text-center" style="min-height:150px;">
-        <p class="mt-5">Dolna sekcja — do uzupełnienia w Fazie 4</p>
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span id="emailsCount">Emaile (0)</span>
+        <div class="d-flex gap-2 align-items-center">
+            <select id="emailSourceFilter" class="form-select form-select-sm" style="width:auto; min-width:160px;">
+                <option value="">Wszystkie zapytania</option>
+            </select>
+            <input type="text" id="emailSearch" class="form-control form-control-sm" placeholder="Szukaj..."
+                   style="width:200px;">
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadEmails()">Odswiez</button>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-striped table-sm table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Email</th>
+                        <th>Biznes</th>
+                        <th>Zrodlo (URL)</th>
+                        <th>Zapytanie</th>
+                        <th>Dodano</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="emailsTableBody">
+                    <tr><td colspan="7" class="text-center text-muted">Ladowanie...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card-footer d-flex justify-content-between align-items-center">
+        <small class="text-muted" id="emailsPagination"></small>
+        <div class="btn-group btn-group-sm" id="emailsPager"></div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let emailPage = 1;
+const emailPerPage = 50;
+let searchTimeout = null;
+
+// ===================== LOAD SOURCE QUERIES =====================
+
+function loadSourceQueries() {
+    fetch('/api/businesses?per_page=1')
+        .then(r => r.json())
+        .then(data => {
+            const queries = data.source_queries || [];
+            const sel1 = document.getElementById('sourceQueryFilter');
+            const sel2 = document.getElementById('emailSourceFilter');
+
+            // Build options for scrape form
+            sel1.innerHTML = '<option value="">Wszystkie biznesy</option>';
+            queries.forEach(q => {
+                sel1.innerHTML += `<option value="${esc(q)}">${esc(q)}</option>`;
+            });
+
+            // Build options for emails filter
+            sel2.innerHTML = '<option value="">Wszystkie zapytania</option>';
+            queries.forEach(q => {
+                sel2.innerHTML += `<option value="${esc(q)}">${esc(q)}</option>`;
+            });
+
+            updateBizCount();
+        });
+}
+
+function updateBizCount() {
+    const sq = document.getElementById('sourceQueryFilter').value;
+    let url = '/api/businesses?per_page=1';
+    if (sq) url += '&source_query=' + encodeURIComponent(sq);
+
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            const total = data.total || 0;
+            document.getElementById('bizCount').textContent =
+                `${total} biznesow w bazie` + (sq ? ` (query: ${sq})` : '');
+        });
+}
+
+document.getElementById('sourceQueryFilter').addEventListener('change', updateBizCount);
+
+// ===================== EMAIL SCRAPE =====================
+
+document.getElementById('emailScrapeForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const sourceQuery = document.getElementById('sourceQueryFilter').value;
+
+    const btn = document.getElementById('scrapeBtn');
+    const statusDiv = document.getElementById('scrapeStatus');
+    const resultDiv = document.getElementById('scrapeResult');
+    btn.disabled = true;
+    statusDiv.style.display = 'block';
+    resultDiv.style.display = 'none';
+    document.getElementById('scrapeStatusText').innerHTML = '<strong>Skanowanie w toku...</strong>';
+
+    const formData = new FormData();
+    if (sourceQuery) formData.set('source_query', sourceQuery);
+
+    fetch('/email-scraping/scrape', { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                statusDiv.style.display = 'none';
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = `<div class="alert alert-danger py-1">${esc(data.error)}</div>`;
+                btn.disabled = false;
+                return;
+            }
+            pollEmailScrape(data.op_id);
+        })
+        .catch(err => {
+            statusDiv.style.display = 'none';
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `<div class="alert alert-danger py-1">Blad: ${esc(err.message)}</div>`;
+            btn.disabled = false;
+        });
+});
+
+function pollEmailScrape(opId) {
+    const interval = setInterval(() => {
+        fetch(`/email-scraping/scrape/status/${opId}`)
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('scrapeStatusText').innerHTML =
+                    '<strong>' + esc(data.details || 'Skanowanie...') + '</strong>';
+
+                if (data.status === 'done' || data.status === 'error') {
+                    clearInterval(interval);
+                    document.getElementById('scrapeStatus').style.display = 'none';
+                    document.getElementById('scrapeBtn').disabled = false;
+
+                    const cls = data.status === 'done' ? 'alert-success' : 'alert-danger';
+                    const resultDiv = document.getElementById('scrapeResult');
+                    resultDiv.style.display = 'block';
+                    resultDiv.innerHTML = `<div class="alert ${cls} py-1">${esc(data.details)}</div>`;
+
+                    if (data.status === 'done') {
+                        loadEmailTasks();
+                        loadEmails();
+                    }
+                }
+            });
+    }, 2000);
+}
+
+// ===================== EMAIL TASKS =====================
+
+function loadEmailTasks() {
+    fetch('/api/email-scrape-tasks')
+        .then(r => r.json())
+        .then(data => {
+            const tasks = data.tasks || [];
+            document.getElementById('tasksCount').textContent = `Zadania skanowania (${tasks.length})`;
+            const tbody = document.getElementById('tasksTableBody');
+
+            if (!tasks.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Brak zadan</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = tasks.map(t => {
+                let badge = 'secondary';
+                let label = t.status;
+                if (t.status === 'running') { badge = 'primary'; label = 'W toku'; }
+                else if (t.status === 'done') { badge = 'success'; label = 'Zakonczone'; }
+                else if (t.status === 'error') { badge = 'danger'; label = 'Blad'; }
+
+                return `<tr>
+                    <td>${t.id}</td>
+                    <td><span class="badge bg-${badge}">${label}</span></td>
+                    <td><small>${esc(t.details || '')}</small></td>
+                    <td><small>${t.started_at || ''}</small></td>
+                    <td><small>${t.finished_at || '-'}</small></td>
+                </tr>`;
+            }).join('');
+        });
+}
+
+// ===================== EMAILS TABLE =====================
+
+function loadEmails() {
+    const search = document.getElementById('emailSearch').value.trim();
+    const sourceQuery = document.getElementById('emailSourceFilter').value;
+
+    let url = `/api/emails?page=${emailPage}&per_page=${emailPerPage}`;
+    if (search) url += '&search=' + encodeURIComponent(search);
+    if (sourceQuery) url += '&source_query=' + encodeURIComponent(sourceQuery);
+
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            const emails = data.emails || [];
+            const total = data.total || 0;
+            const pages = data.pages || 1;
+
+            document.getElementById('emailsCount').textContent = `Emaile (${total})`;
+
+            const tbody = document.getElementById('emailsTableBody');
+            if (!emails.length) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Brak emaili</td></tr>';
+                document.getElementById('emailsPagination').textContent = '';
+                document.getElementById('emailsPager').innerHTML = '';
+                return;
+            }
+
+            tbody.innerHTML = emails.map((e, idx) => {
+                const num = (emailPage - 1) * emailPerPage + idx + 1;
+                return `<tr>
+                    <td>${num}</td>
+                    <td><strong>${esc(e.email)}</strong></td>
+                    <td>${esc(e.business_name || '-')}</td>
+                    <td><small>${e.source ? `<a href="${esc(e.source)}" target="_blank" rel="noopener">${truncate(e.source, 40)}</a>` : '-'}</small></td>
+                    <td><small>${esc(e.source_query || '-')}</small></td>
+                    <td><small>${e.created_at || ''}</small></td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="deleteEmail(${e.id})" title="Usun">
+                            &times;
+                        </button>
+                    </td>
+                </tr>`;
+            }).join('');
+
+            // Pagination info
+            const from = (emailPage - 1) * emailPerPage + 1;
+            const to = Math.min(emailPage * emailPerPage, total);
+            document.getElementById('emailsPagination').textContent = `${from}-${to} z ${total}`;
+
+            // Pagination buttons
+            const pager = document.getElementById('emailsPager');
+            let pagerHtml = '';
+            if (emailPage > 1) {
+                pagerHtml += `<button class="btn btn-outline-secondary" onclick="goEmailPage(${emailPage - 1})">&laquo;</button>`;
+            }
+            for (let p = Math.max(1, emailPage - 2); p <= Math.min(pages, emailPage + 2); p++) {
+                const active = p === emailPage ? ' active' : '';
+                pagerHtml += `<button class="btn btn-outline-secondary${active}" onclick="goEmailPage(${p})">${p}</button>`;
+            }
+            if (emailPage < pages) {
+                pagerHtml += `<button class="btn btn-outline-secondary" onclick="goEmailPage(${emailPage + 1})">&raquo;</button>`;
+            }
+            pager.innerHTML = pagerHtml;
+        });
+}
+
+function goEmailPage(p) {
+    emailPage = p;
+    loadEmails();
+}
+
+function deleteEmail(id) {
+    if (!confirm('Usunac ten email?')) return;
+    fetch(`/api/emails/${id}/delete`, { method: 'POST' })
+        .then(r => r.json())
+        .then(() => loadEmails());
+}
+
+// Debounced search
+document.getElementById('emailSearch').addEventListener('input', function() {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => { emailPage = 1; loadEmails(); }, 400);
+});
+
+document.getElementById('emailSourceFilter').addEventListener('change', function() {
+    emailPage = 1;
+    loadEmails();
+});
+
+// ===================== HELPERS =====================
+
+function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+function truncate(s, len) {
+    if (!s) return '';
+    return s.length > len ? esc(s.substring(0, len)) + '...' : esc(s);
+}
+
+// ===================== INIT =====================
+
+loadSourceQueries();
+loadEmailTasks();
+loadEmails();
+</script>
 {% endblock %}

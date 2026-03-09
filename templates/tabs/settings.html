@@ -3,35 +3,18 @@
 <h4>Ustawienia</h4>
 
 <div class="row">
-    <!-- Google Places API Key -->
+    <!-- Google API Key -->
     <div class="col-md-6 mb-3">
         <div class="card">
-            <div class="card-header">Google Places API Key</div>
+            <div class="card-header">Google API Key</div>
             <div class="card-body">
                 <form id="apiKeyForm" method="POST" action="/settings/api-key">
                     <div class="mb-3">
                         <input type="password" class="form-control" name="api_key"
-                               placeholder="Klucz do Google Places API (scrapowanie)...">
+                               placeholder="Klucz do Google API (mapa + scrapowanie)...">
                     </div>
                     <button type="submit" class="btn btn-primary btn-sm">Zapisz</button>
                     <span class="form-status ms-2" id="apiKeyStatus"></span>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <!-- Google Maps API Key -->
-    <div class="col-md-6 mb-3">
-        <div class="card">
-            <div class="card-header">Google Maps API Key</div>
-            <div class="card-body">
-                <form id="mapsKeyForm" method="POST" action="/settings/google-maps-key">
-                    <div class="mb-3">
-                        <input type="password" class="form-control" name="google_maps_key"
-                               placeholder="Klucz do Google Maps JS API (mapa)...">
-                    </div>
-                    <button type="submit" class="btn btn-primary btn-sm">Zapisz</button>
-                    <span class="form-status ms-2" id="mapsKeyStatus"></span>
                 </form>
             </div>
         </div>
@@ -59,6 +42,27 @@
                     </div>
                     <button type="submit" class="btn btn-success btn-sm">Dodaj</button>
                     <span class="form-status ms-2" id="mailboxStatus"></span>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Scrapowanie emaili -->
+<div class="row">
+    <div class="col-md-6 mb-3">
+        <div class="card">
+            <div class="card-header">Scrapowanie emaili</div>
+            <div class="card-body">
+                <form id="emailScrapingForm" method="POST" action="/settings/email-scraping">
+                    <div class="mb-3">
+                        <label class="form-label">Max podstron na stronę biznesu</label>
+                        <input type="number" class="form-control" name="email_max_pages"
+                               value="{{ settings.get('email_max_pages', '10') }}" min="1" max="100">
+                        <div class="form-text">Ile podstron maksymalnie przeszukać na każdej stronie www (domyślnie 10)</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">Zapisz</button>
+                    <span class="form-status ms-2" id="emailScrapingStatus"></span>
                 </form>
             </div>
         </div>
@@ -146,12 +150,12 @@ document.getElementById('apiKeyForm').addEventListener('submit', function(e) {
         });
 });
 
-// --- Google Maps API Key form ---
-document.getElementById('mapsKeyForm').addEventListener('submit', function(e) {
+// --- Email scraping settings form ---
+document.getElementById('emailScrapingForm').addEventListener('submit', function(e) {
     e.preventDefault();
     const form = this;
     const btn = form.querySelector('button[type="submit"]');
-    const status = document.getElementById('mapsKeyStatus');
+    const status = document.getElementById('emailScrapingStatus');
 
     btn.disabled = true;
     showStatus(status, 'Zapisywanie...', 'loading');
@@ -164,7 +168,6 @@ document.getElementById('mapsKeyForm').addEventListener('submit', function(e) {
                 showStatus(status, data.error, 'error');
             } else {
                 showStatus(status, 'Zapisano pomyślnie!', 'success');
-                form.reset();
             }
         })
         .catch(err => {

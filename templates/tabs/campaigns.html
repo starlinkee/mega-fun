@@ -2,9 +2,168 @@
 {% block content %}
 <h4>Kampanie</h4>
 
-<div class="card">
-    <div class="card-body text-muted text-center" style="min-height:300px;">
-        <p class="mt-5">Do uzupełnienia w Fazie 5</p>
+<!-- Formularz tworzenia kampanii -->
+<div class="card mb-4">
+    <div class="card-header">Nowa kampania</div>
+    <div class="card-body">
+        <form id="campaignForm">
+            <div class="mb-3">
+                <label class="form-label">Nazwa kampanii</label>
+                <input type="text" class="form-control" name="name" placeholder="np. Oferta wakacyjna 2026" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Tytuł maila (Subject)</label>
+                <input type="text" class="form-control" name="subject" placeholder="np. Specjalna oferta dla Twojej firmy" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Treść maila</label>
+                <textarea class="form-control" name="body" rows="8" placeholder="Treść wiadomości email..." required></textarea>
+            </div>
+            <button type="submit" class="btn btn-success" id="createBtn">Utwórz i uruchom kampanię</button>
+            <span class="ms-2" id="campaignStatus"></span>
+        </form>
     </div>
 </div>
+
+<!-- Lista kampanii -->
+<div class="card">
+    <div class="card-header">Kampanie ({{ campaigns|length }})</div>
+    <div class="card-body p-0">
+        <table class="table table-striped table-sm mb-0">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Nazwa</th>
+                    <th>Temat</th>
+                    <th>Status</th>
+                    <th>Postęp</th>
+                    <th>Utworzono</th>
+                    <th>Akcje</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in campaigns %}
+                <tr id="campaign-row-{{ c.id }}">
+                    <td>{{ c.id }}</td>
+                    <td>{{ c.name }}</td>
+                    <td>{{ c.subject }}</td>
+                    <td>
+                        {% if c.status == 'active' %}
+                            <span class="badge bg-success">Aktywna</span>
+                        {% elif c.status == 'queued' %}
+                            <span class="badge bg-info text-dark">W kolejce</span>
+                        {% elif c.status == 'done' %}
+                            <span class="badge bg-primary">Zakończona</span>
+                        {% elif c.status == 'stopped' %}
+                            <span class="badge bg-warning text-dark">Zatrzymana</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{{ c.status }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="text-success">{{ c.sent }}</span> /
+                        <span>{{ c.total }}</span>
+                        {% if c.failed > 0 %}
+                            (<span class="text-danger">{{ c.failed }} błędów</span>)
+                        {% endif %}
+                        {% if c.total > 0 %}
+                            <div class="progress mt-1" style="height: 4px;">
+                                <div class="progress-bar bg-success" style="width: {{ (c.sent * 100 / c.total)|round }}%"></div>
+                                <div class="progress-bar bg-danger" style="width: {{ (c.failed * 100 / c.total)|round }}%"></div>
+                            </div>
+                        {% endif %}
+                    </td>
+                    <td>{{ c.created_at }}</td>
+                    <td>
+                        {% if c.status in ('active', 'queued') %}
+                            <button class="btn btn-warning btn-sm" onclick="stopCampaign({{ c.id }}, this)">Stop</button>
+                        {% elif c.status == 'stopped' %}
+                            <button class="btn btn-success btn-sm" onclick="resumeCampaign({{ c.id }}, this)">Wznów</button>
+                        {% endif %}
+                        <button class="btn btn-danger btn-sm" onclick="deleteCampaign({{ c.id }}, this)">Usuń</button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="text-center text-muted">Brak kampanii</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showStatus(el, message, type) {
+    if (type === 'loading') {
+        el.innerHTML = '<span class="text-success"><span class="spinner-border spinner-border-sm"></span> <strong>' + message + '</strong></span>';
+    } else if (type === 'success') {
+        el.innerHTML = '<span class="text-success"><strong>' + message + '</strong></span>';
+        setTimeout(() => { el.innerHTML = ''; }, 4000);
+    } else if (type === 'error') {
+        el.innerHTML = '<span class="text-danger"><strong>' + message + '</strong></span>';
+        setTimeout(() => { el.innerHTML = ''; }, 5000);
+    }
+}
+
+// Create campaign
+document.getElementById('campaignForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const form = this;
+    const btn = document.getElementById('createBtn');
+    const status = document.getElementById('campaignStatus');
+
+    btn.disabled = true;
+    showStatus(status, 'Tworzenie kampanii...', 'loading');
+
+    fetch('/campaigns/create', { method: 'POST', body: new FormData(form) })
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            if (data.error) {
+                showStatus(status, data.error, 'error');
+            } else {
+                var msg = 'Kampania utworzona! Zakolejkowano ' + data.emails_queued + ' emaili.';
+                if (data.status === 'queued') msg += ' (W kolejce — inna kampania jest aktywna)';
+                showStatus(status, msg, 'success');
+                setTimeout(() => location.reload(), 1500);
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            showStatus(status, 'Błąd: ' + err.message, 'error');
+        });
+});
+
+function stopCampaign(id, btn) {
+    if (!confirm('Zatrzymać kampanię?')) return;
+    btn.disabled = true;
+    fetch('/campaigns/' + id + '/stop', { method: 'POST' })
+        .then(r => r.json())
+        .then(() => location.reload())
+        .catch(err => { btn.disabled = false; alert('Błąd: ' + err.message); });
+}
+
+function resumeCampaign(id, btn) {
+    btn.disabled = true;
+    fetch('/campaigns/' + id + '/resume', { method: 'POST' })
+        .then(r => r.json())
+        .then(() => location.reload())
+        .catch(err => { btn.disabled = false; alert('Błąd: ' + err.message); });
+}
+
+function deleteCampaign(id, btn) {
+    if (!confirm('Usunąć kampanię? Wszystkie dane wysyłki zostaną usunięte.')) return;
+    btn.disabled = true;
+    fetch('/campaigns/' + id + '/delete', { method: 'POST' })
+        .then(r => r.json())
+        .then(() => {
+            const row = document.getElementById('campaign-row-' + id);
+            row.style.backgroundColor = '#d1e7dd';
+            row.querySelector('td:last-child').innerHTML = '<span class="text-success"><strong>Usunięto!</strong></span>';
+            setTimeout(() => row.remove(), 1500);
+        })
+        .catch(err => { btn.disabled = false; alert('Błąd: ' + err.message); });
+}
+</script>
 {% endblock %}

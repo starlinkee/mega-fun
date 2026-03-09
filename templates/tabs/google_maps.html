@@ -70,7 +70,7 @@
                         <th>#</th>
                         <th>Zapytanie</th>
                         <th>Status</th>
-                        <th>Szczegoly</th>
+                        <th>Emaile</th>
                         <th>Rozpoczeto</th>
                         <th>Zakonczono</th>
                     </tr>
@@ -79,6 +79,34 @@
                     <tr><td colspan="6" class="text-center text-muted">Ladowanie...</td></tr>
                 </tbody>
             </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: emaile ze scrapa -->
+<div class="modal fade" id="emailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Emaile ze scrapa: <span id="emailsModalQuery"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped mb-0">
+                        <thead>
+                            <tr>
+                                <th>Email</th>
+                                <th>Firma</th>
+                                <th>Strona</th>
+                                <th>Dodano</th>
+                            </tr>
+                        </thead>
+                        <tbody id="emailsModalBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -252,15 +280,41 @@ function loadTasks() {
                 else if (t.status === 'done') { badge = 'success'; label = 'Zakonczone'; }
                 else if (t.status === 'error') { badge = 'danger'; label = 'Blad'; }
 
+                const emailCell = t.email_count > 0
+                    ? `<a href="#" class="badge bg-success text-decoration-none" onclick="showTaskEmails(${t.id}, event)">${t.email_count} email${t.email_count !== 1 ? 'i' : ''}</a>`
+                    : `<span class="text-muted">0</span>`;
+
                 return `<tr>
                     <td>${t.id}</td>
-                    <td>${esc(t.details || '')}</td>
+                    <td>${esc(t.source_query || t.details || '')}</td>
                     <td><span class="badge bg-${badge}">${label}</span></td>
-                    <td><small>${esc(t.details || '')}</small></td>
+                    <td>${emailCell}</td>
                     <td><small>${t.started_at || ''}</small></td>
                     <td><small>${t.finished_at || '-'}</small></td>
                 </tr>`;
             }).join('');
+        });
+}
+
+function showTaskEmails(opId, event) {
+    event.preventDefault();
+    fetch(`/api/scrape-tasks/${opId}/emails`)
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('emailsModalQuery').textContent = data.source_query || '';
+            const tbody = document.getElementById('emailsModalBody');
+            const emails = data.emails || [];
+            if (!emails.length) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Brak emaili</td></tr>';
+            } else {
+                tbody.innerHTML = emails.map(e => `<tr>
+                    <td>${esc(e.email)}</td>
+                    <td><small>${esc(e.business_name || '')}</small></td>
+                    <td><small>${e.website ? `<a href="${esc(e.website)}" target="_blank">${esc(e.website)}</a>` : ''}</small></td>
+                    <td><small>${e.created_at || ''}</small></td>
+                </tr>`).join('');
+            }
+            new bootstrap.Modal(document.getElementById('emailsModal')).show();
         });
 }
 
