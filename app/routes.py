@@ -3,6 +3,7 @@ import sys
 import os
 import re
 import time
+import json
 
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session
 from app.db import get_db
@@ -86,7 +87,89 @@ def logout():
 
 @main_bp.route("/")
 def index():
-    return redirect(url_for("main.tab_google_maps"))
+    return redirect(url_for("main.tab_dashboard"))
+
+
+@main_bp.route("/dashboard")
+def tab_dashboard():
+    return render_template("tabs/dashboard.html", active_tab="dashboard")
+
+
+@main_bp.route("/api/dashboard-stats")
+def api_dashboard_stats():
+    """Return dashboard statistics: today, this month, total."""
+    db = get_db()
+
+    stats = {}
+
+    # Scrapes (operations_log)
+    stats["scrapes_total"] = db.execute(
+        "SELECT COUNT(*) FROM operations_log"
+    ).fetchone()[0]
+    stats["scrapes_month"] = db.execute(
+        "SELECT COUNT(*) FROM operations_log WHERE strftime('%Y-%m', started_at, 'localtime') = strftime('%Y-%m', 'now', 'localtime')"
+    ).fetchone()[0]
+    stats["scrapes_today"] = db.execute(
+        "SELECT COUNT(*) FROM operations_log WHERE date(started_at, 'localtime') = date('now', 'localtime')"
+    ).fetchone()[0]
+
+    # Businesses
+    stats["businesses_total"] = db.execute(
+        "SELECT COUNT(*) FROM businesses"
+    ).fetchone()[0]
+    stats["businesses_month"] = db.execute(
+        "SELECT COUNT(*) FROM businesses WHERE strftime('%Y-%m', created_at, 'localtime') = strftime('%Y-%m', 'now', 'localtime')"
+    ).fetchone()[0]
+    stats["businesses_today"] = db.execute(
+        "SELECT COUNT(*) FROM businesses WHERE date(created_at, 'localtime') = date('now', 'localtime')"
+    ).fetchone()[0]
+
+    # Websites (businesses with non-empty website)
+    stats["websites_total"] = db.execute(
+        "SELECT COUNT(*) FROM businesses WHERE website IS NOT NULL AND website != ''"
+    ).fetchone()[0]
+    stats["websites_month"] = db.execute(
+        "SELECT COUNT(*) FROM businesses WHERE website IS NOT NULL AND website != '' AND strftime('%Y-%m', created_at, 'localtime') = strftime('%Y-%m', 'now', 'localtime')"
+    ).fetchone()[0]
+    stats["websites_today"] = db.execute(
+        "SELECT COUNT(*) FROM businesses WHERE website IS NOT NULL AND website != '' AND date(created_at, 'localtime') = date('now', 'localtime')"
+    ).fetchone()[0]
+
+    # Emails scraped
+    stats["emails_total"] = db.execute(
+        "SELECT COUNT(*) FROM emails"
+    ).fetchone()[0]
+    stats["emails_month"] = db.execute(
+        "SELECT COUNT(*) FROM emails WHERE strftime('%Y-%m', created_at, 'localtime') = strftime('%Y-%m', 'now', 'localtime')"
+    ).fetchone()[0]
+    stats["emails_today"] = db.execute(
+        "SELECT COUNT(*) FROM emails WHERE date(created_at, 'localtime') = date('now', 'localtime')"
+    ).fetchone()[0]
+
+    # Campaigns
+    stats["campaigns_total"] = db.execute(
+        "SELECT COUNT(*) FROM campaigns"
+    ).fetchone()[0]
+    stats["campaigns_month"] = db.execute(
+        "SELECT COUNT(*) FROM campaigns WHERE strftime('%Y-%m', created_at, 'localtime') = strftime('%Y-%m', 'now', 'localtime')"
+    ).fetchone()[0]
+    stats["campaigns_today"] = db.execute(
+        "SELECT COUNT(*) FROM campaigns WHERE date(created_at, 'localtime') = date('now', 'localtime')"
+    ).fetchone()[0]
+
+    # Emails sent (campaign_emails with status='sent')
+    stats["sent_total"] = db.execute(
+        "SELECT COUNT(*) FROM campaign_emails WHERE status = 'sent'"
+    ).fetchone()[0]
+    stats["sent_month"] = db.execute(
+        "SELECT COUNT(*) FROM campaign_emails WHERE status = 'sent' AND strftime('%Y-%m', sent_at, 'localtime') = strftime('%Y-%m', 'now', 'localtime')"
+    ).fetchone()[0]
+    stats["sent_today"] = db.execute(
+        "SELECT COUNT(*) FROM campaign_emails WHERE status = 'sent' AND date(sent_at, 'localtime') = date('now', 'localtime')"
+    ).fetchone()[0]
+
+    db.close()
+    return jsonify(stats)
 
 
 @main_bp.route("/google-maps")
@@ -104,6 +187,8 @@ def api_businesses():
     search = request.args.get("search", "").strip()
     source_query = request.args.get("source_query", "").strip()
     category = request.args.get("category", "").strip()
+    country = request.args.get("country", "").strip()
+    city = request.args.get("city", "").strip()
 
     per_page = min(per_page, 200)
     offset = (page - 1) * per_page
@@ -120,6 +205,12 @@ def api_businesses():
     if category:
         conditions.append("category = ?")
         params.append(category)
+    if country:
+        conditions.append("country = ?")
+        params.append(country)
+    if city:
+        conditions.append("city = ?")
+        params.append(city)
 
     where = ""
     if conditions:
@@ -144,6 +235,15 @@ def api_businesses():
         "SELECT DISTINCT category FROM businesses WHERE category IS NOT NULL AND category != '' ORDER BY category"
     ).fetchall()]
 
+    # Get distinct countries and cities for filter dropdowns
+    countries = [r[0] for r in db.execute(
+        "SELECT DISTINCT country FROM businesses WHERE country IS NOT NULL AND country != '' ORDER BY country"
+    ).fetchall()]
+
+    cities = [r[0] for r in db.execute(
+        "SELECT DISTINCT city FROM businesses WHERE city IS NOT NULL AND city != '' ORDER BY city"
+    ).fetchall()]
+
     db.close()
 
     return jsonify({
@@ -154,6 +254,8 @@ def api_businesses():
         "pages": (total + per_page - 1) // per_page if per_page else 1,
         "source_queries": queries,
         "categories": categories,
+        "countries": countries,
+        "cities": cities,
     })
 
 
@@ -302,41 +404,124 @@ def tab_email_scraping():
 _email_scrape_processes = {}
 
 
+def _launch_email_scrape_subprocess(op_id, source_query, business_ids, country, city, max_pages):
+    """Build command and launch email scrape subprocess. Updates _email_scrape_processes."""
+    script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "scrape_emails.py")
+    cmd = [sys.executable, script]
+    # Pass string params via env vars to avoid [Errno 22] Invalid argument on Windows
+    # caused by non-ASCII characters (Polish diacritics) in CLI arguments.
+    env = os.environ.copy()
+    env["SCRAPE_OP_ID"] = str(op_id)
+    env["SCRAPE_MAX_PAGES"] = str(max_pages)
+    env["SCRAPE_SOURCE_QUERY"] = source_query or ""
+    env["SCRAPE_BUSINESS_IDS"] = business_ids or ""
+    env["SCRAPE_COUNTRY"] = country or ""
+    env["SCRAPE_CITY"] = city or ""
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    _email_scrape_processes[op_id] = proc
+
+
+def _promote_next_email_scrape():
+    """Promote the oldest queued email scrape to running and launch it."""
+    db = get_db()
+    row = db.execute(
+        "SELECT * FROM operations_log WHERE operation_type = 'email_scrape' AND status = 'queued'"
+        " ORDER BY started_at ASC LIMIT 1"
+    ).fetchone()
+    if not row:
+        db.close()
+        return
+
+    op_id = row["id"]
+    params = json.loads(row["params"] or "{}")
+    source_query = params.get("source_query", "")
+    business_ids = params.get("business_ids", "")
+    country = params.get("country", "")
+    city = params.get("city", "")
+
+    filters = []
+    if source_query:
+        filters.append(f"query: {source_query}")
+    if country:
+        filters.append(f"kraj: {country}")
+    if city:
+        filters.append(f"miasto: {city}")
+    details_suffix = f" ({', '.join(filters)})" if filters else ""
+
+    db.execute(
+        "UPDATE operations_log SET status = 'running', details = ? WHERE id = ?",
+        (f"Scraping emaili{details_suffix}", op_id),
+    )
+    db.commit()
+
+    max_pages_row = db.execute("SELECT value FROM settings WHERE key = 'email_max_pages'").fetchone()
+    max_pages = max_pages_row["value"] if max_pages_row else "10"
+    db.close()
+
+    _launch_email_scrape_subprocess(op_id, source_query, business_ids, country, city, max_pages)
+
+
 @main_bp.route("/email-scraping/scrape", methods=["POST"])
 def start_email_scrape():
-    """Start email scraping as subprocess."""
+    """Start email scraping as subprocess, or queue it if one is already running."""
     source_query = request.form.get("source_query", "").strip()
     business_ids = request.form.get("business_ids", "").strip()
+    country = request.form.get("country", "").strip()
+    city = request.form.get("city", "").strip()
+
+    filters = []
+    if source_query:
+        filters.append(f"query: {source_query}")
+    if country:
+        filters.append(f"kraj: {country}")
+    if city:
+        filters.append(f"miasto: {city}")
+    details_suffix = f" ({', '.join(filters)})" if filters else ""
 
     db = get_db()
+
+    # Check if any email scrape is already running
+    already_running = db.execute(
+        "SELECT id FROM operations_log WHERE operation_type = 'email_scrape' AND status = 'running' LIMIT 1"
+    ).fetchone()
+
+    if already_running:
+        # Queue this job — store params as JSON so we can launch it later
+        params_json = json.dumps({
+            "source_query": source_query,
+            "business_ids": business_ids,
+            "country": country,
+            "city": city,
+        })
+        cursor = db.execute(
+            "INSERT INTO operations_log (operation_type, status, details, params) VALUES ('email_scrape', 'queued', ?, ?)",
+            (f"W kolejce{details_suffix}", params_json),
+        )
+        op_id = cursor.lastrowid
+        db.commit()
+        db.close()
+        return jsonify({"op_id": op_id, "status": "queued"})
+
+    # No scrape running — start immediately
     cursor = db.execute(
         "INSERT INTO operations_log (operation_type, status, details) VALUES ('email_scrape', 'running', ?)",
-        (f"Scraping emaili{' (query: ' + source_query + ')' if source_query else ''}",),
+        (f"Scraping emaili{details_suffix}",),
     )
     op_id = cursor.lastrowid
     db.commit()
 
-    # Read max_pages setting
-    row = db.execute("SELECT value FROM settings WHERE key = 'email_max_pages'").fetchone()
-    max_pages = row["value"] if row else "10"
+    max_pages_row = db.execute("SELECT value FROM settings WHERE key = 'email_max_pages'").fetchone()
+    max_pages = max_pages_row["value"] if max_pages_row else "10"
     db.close()
 
-    script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "scrape_emails.py")
-    cmd = [sys.executable, script, "--op-id", str(op_id), "--max-pages", max_pages]
-    if source_query:
-        cmd += ["--source-query", source_query]
-    if business_ids:
-        cmd += ["--business-ids", business_ids]
-
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    _email_scrape_processes[op_id] = proc
+    _launch_email_scrape_subprocess(op_id, source_query, business_ids, country, city, max_pages)
 
     return jsonify({"op_id": op_id, "status": "running"})
 
 
 @main_bp.route("/email-scraping/scrape/status/<int:op_id>")
 def email_scrape_status(op_id):
-    """Check email scrape operation status."""
+    """Check email scrape operation status. Promotes next queued job when current finishes."""
     db = get_db()
     row = db.execute("SELECT * FROM operations_log WHERE id = ?", (op_id,)).fetchone()
     db.close()
@@ -349,6 +534,8 @@ def email_scrape_status(op_id):
     proc = _email_scrape_processes.get(op_id)
     if proc and proc.poll() is not None:
         _email_scrape_processes.pop(op_id, None)
+        # Process just finished — promote next queued scrape if any
+        _promote_next_email_scrape()
 
     return jsonify(result)
 
@@ -421,6 +608,28 @@ def delete_email(email_id):
     db.commit()
     db.close()
     return jsonify({"ok": True})
+
+
+@main_bp.route("/api/business-locations")
+def api_business_locations():
+    """Return distinct countries and cities from businesses table."""
+    db = get_db()
+    country_filter = request.args.get("country", "").strip()
+
+    countries = [r[0] for r in db.execute(
+        "SELECT DISTINCT country FROM businesses WHERE country IS NOT NULL AND country != '' ORDER BY country"
+    ).fetchall()]
+
+    city_q = "SELECT DISTINCT city FROM businesses WHERE city IS NOT NULL AND city != ''"
+    city_params = []
+    if country_filter:
+        city_q += " AND country = ?"
+        city_params.append(country_filter)
+    city_q += " ORDER BY city"
+    cities = [r[0] for r in db.execute(city_q, city_params).fetchall()]
+
+    db.close()
+    return jsonify({"countries": countries, "cities": cities})
 
 
 @main_bp.route("/api/email-scrape-tasks")

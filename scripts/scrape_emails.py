@@ -254,12 +254,24 @@ def crawl_website(url, max_pages):
 
 
 def main():
+    # Read params from env vars (set by Flask to avoid [Errno 22] on Windows with non-ASCII CLI args).
+    # CLI args are kept as fallback for manual usage.
+    _env_op_id = os.environ.get("SCRAPE_OP_ID")
+    _env_max_pages = os.environ.get("SCRAPE_MAX_PAGES")
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("--op-id", type=int, default=None, help="Operations log ID (set by Flask)")
-    parser.add_argument("--source-query", type=str, default=None, help="Filter businesses by source_query")
-    parser.add_argument("--business-ids", type=str, default=None, help="Comma-separated business IDs")
-    parser.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES,
-                        help=f"Max pages to crawl per business website (default: {DEFAULT_MAX_PAGES})")
+    parser.add_argument("--op-id", type=int,
+                        default=int(_env_op_id) if _env_op_id else None)
+    parser.add_argument("--source-query", type=str,
+                        default=os.environ.get("SCRAPE_SOURCE_QUERY") or None)
+    parser.add_argument("--business-ids", type=str,
+                        default=os.environ.get("SCRAPE_BUSINESS_IDS") or None)
+    parser.add_argument("--country", type=str,
+                        default=os.environ.get("SCRAPE_COUNTRY") or None)
+    parser.add_argument("--city", type=str,
+                        default=os.environ.get("SCRAPE_CITY") or None)
+    parser.add_argument("--max-pages", type=int,
+                        default=int(_env_max_pages) if _env_max_pages else DEFAULT_MAX_PAGES)
     args = parser.parse_args()
 
     op_id = args.op_id or log_operation("running", "Rozpoczynanie scrapowania emaili...")
@@ -280,6 +292,14 @@ def main():
         if args.source_query:
             conditions.append("source_query = ?")
             params.append(args.source_query)
+
+        if args.country:
+            conditions.append("country = ?")
+            params.append(args.country)
+
+        if args.city:
+            conditions.append("city = ?")
+            params.append(args.city)
 
         where = "WHERE " + " AND ".join(conditions)
         businesses = db.execute(
@@ -317,14 +337,12 @@ def main():
                 if emails:
                     db = get_db()
                     for email in emails:
-                        try:
-                            db.execute(
-                                "INSERT OR IGNORE INTO emails (email, business_id, source) VALUES (?, ?, ?)",
-                                (email, biz_id, website),
-                            )
+                        cursor = db.execute(
+                            "INSERT OR IGNORE INTO emails (email, business_id, source) VALUES (?, ?, ?)",
+                            (email, biz_id, website),
+                        )
+                        if cursor.rowcount > 0:
                             total_saved += 1
-                        except sqlite3.IntegrityError:
-                            pass  # duplicate email — UNIQUE constraint
                     db.commit()
                     db.close()
             except Exception as e:

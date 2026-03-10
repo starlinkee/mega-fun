@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block content %}
+<h4>Dashboard</h4>
+
+<div class="row g-3" id="statsContainer">
+    <div class="col-md-4 col-lg-2">
+        <div class="card text-center">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2 text-muted">Zescrapowane strony</h6>
+                <div class="mb-1"><span class="fs-3 fw-bold text-accent" id="scrapes_total">-</span></div>
+                <small class="text-muted">Ten miesiąc: <strong id="scrapes_month">-</strong></small><br>
+                <small class="text-muted">Dzisiaj: <strong id="scrapes_today">-</strong></small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-lg-2">
+        <div class="card text-center">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2 text-muted">Nowe biznesy</h6>
+                <div class="mb-1"><span class="fs-3 fw-bold text-accent" id="businesses_total">-</span></div>
+                <small class="text-muted">Ten miesiąc: <strong id="businesses_month">-</strong></small><br>
+                <small class="text-muted">Dzisiaj: <strong id="businesses_today">-</strong></small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-lg-2">
+        <div class="card text-center">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2 text-muted">Strony WWW</h6>
+                <div class="mb-1"><span class="fs-3 fw-bold text-accent" id="websites_total">-</span></div>
+                <small class="text-muted">Ten miesiąc: <strong id="websites_month">-</strong></small><br>
+                <small class="text-muted">Dzisiaj: <strong id="websites_today">-</strong></small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-lg-2">
+        <div class="card text-center">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2 text-muted">Maile zescrapowane</h6>
+                <div class="mb-1"><span class="fs-3 fw-bold text-accent" id="emails_total">-</span></div>
+                <small class="text-muted">Ten miesiąc: <strong id="emails_month">-</strong></small><br>
+                <small class="text-muted">Dzisiaj: <strong id="emails_today">-</strong></small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-lg-2">
+        <div class="card text-center">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2 text-muted">Kampanie</h6>
+                <div class="mb-1"><span class="fs-3 fw-bold text-accent" id="campaigns_total">-</span></div>
+                <small class="text-muted">Ten miesiąc: <strong id="campaigns_month">-</strong></small><br>
+                <small class="text-muted">Dzisiaj: <strong id="campaigns_today">-</strong></small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-lg-2">
+        <div class="card text-center">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2 text-muted">Maile wysłane</h6>
+                <div class="mb-1"><span class="fs-3 fw-bold text-accent" id="sent_total">-</span></div>
+                <small class="text-muted">Ten miesiąc: <strong id="sent_month">-</strong></small><br>
+                <small class="text-muted">Dzisiaj: <strong id="sent_today">-</strong></small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const STAT_KEYS = [
+    'scrapes_total', 'scrapes_month', 'scrapes_today',
+    'businesses_total', 'businesses_month', 'businesses_today',
+    'websites_total', 'websites_month', 'websites_today',
+    'emails_total', 'emails_month', 'emails_today',
+    'campaigns_total', 'campaigns_month', 'campaigns_today',
+    'sent_total', 'sent_month', 'sent_today'
+];
+
+function loadStats() {
+    fetch('/api/dashboard-stats')
+        .then(r => r.json())
+        .then(data => {
+            STAT_KEYS.forEach(key => {
+                const el = document.getElementById(key);
+                if (el) el.textContent = data[key] != null ? data[key].toLocaleString('pl-PL') : '0';
+            });
+        })
+        .catch(err => console.error('Dashboard stats error:', err));
+}
+
+loadStats();
+setInterval(loadStats, 30000);
+</script>
+{% endblock %}

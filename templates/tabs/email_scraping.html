@@ -16,6 +16,20 @@
                             <option value="">Wszystkie biznesy</option>
                         </select>
                     </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label">Kraj</label>
+                            <select name="country" id="countryFilter" class="form-select">
+                                <option value="">Wszystkie kraje</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Miasto</label>
+                            <select name="city" id="cityFilter" class="form-select">
+                                <option value="">Wszystkie miasta</option>
+                            </select>
+                        </div>
+                    </div>
                     <div class="mb-2" id="statsRow">
                         <small class="text-muted" id="bizCount">Ladowanie...</small>
                     </div>
@@ -109,7 +123,7 @@ let emailPage = 1;
 const emailPerPage = 50;
 let searchTimeout = null;
 
-// ===================== LOAD SOURCE QUERIES =====================
+// ===================== LOAD SOURCE QUERIES + LOCATIONS =====================
 
 function loadSourceQueries() {
     fetch('/api/businesses?per_page=1')
@@ -135,21 +149,66 @@ function loadSourceQueries() {
         });
 }
 
+function loadLocations(selectedCountry) {
+    let url = '/api/business-locations';
+    if (selectedCountry) url += '?country=' + encodeURIComponent(selectedCountry);
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            const countryEl = document.getElementById('countryFilter');
+            const cityEl = document.getElementById('cityFilter');
+            const currentCountry = countryEl.value;
+
+            if (!selectedCountry) {
+                // First load — fill countries
+                countryEl.innerHTML = '<option value="">Wszystkie kraje</option>';
+                (data.countries || []).forEach(c => {
+                    countryEl.innerHTML += `<option value="${esc(c)}">${esc(c)}</option>`;
+                });
+            }
+
+            // Always update cities
+            const currentCity = cityEl.value;
+            cityEl.innerHTML = '<option value="">Wszystkie miasta</option>';
+            (data.cities || []).forEach(c => {
+                cityEl.innerHTML += `<option value="${esc(c)}">${esc(c)}</option>`;
+            });
+            // Restore city selection if still available
+            if (currentCity && [...cityEl.options].some(o => o.value === currentCity)) {
+                cityEl.value = currentCity;
+            }
+        });
+}
+
 function updateBizCount() {
     const sq = document.getElementById('sourceQueryFilter').value;
+    const country = document.getElementById('countryFilter').value;
+    const city = document.getElementById('cityFilter').value;
+
     let url = '/api/businesses?per_page=1';
     if (sq) url += '&source_query=' + encodeURIComponent(sq);
+    if (country) url += '&country=' + encodeURIComponent(country);
+    if (city) url += '&city=' + encodeURIComponent(city);
 
     fetch(url)
         .then(r => r.json())
         .then(data => {
             const total = data.total || 0;
+            const parts = [];
+            if (sq) parts.push(`query: ${sq}`);
+            if (country) parts.push(country);
+            if (city) parts.push(city);
             document.getElementById('bizCount').textContent =
-                `${total} biznesow w bazie` + (sq ? ` (query: ${sq})` : '');
+                `${total} biznesow w bazie` + (parts.length ? ` (${parts.join(', ')})` : '');
         });
 }
 
 document.getElementById('sourceQueryFilter').addEventListener('change', updateBizCount);
+document.getElementById('countryFilter').addEventListener('change', function() {
+    loadLocations(this.value);
+    updateBizCount();
+});
+document.getElementById('cityFilter').addEventListener('change', updateBizCount);
 
 // ===================== EMAIL SCRAPE =====================
 
@@ -165,8 +224,13 @@ document.getElementById('emailScrapeForm').addEventListener('submit', function(e
     resultDiv.style.display = 'none';
     document.getElementById('scrapeStatusText').innerHTML = '<strong>Skanowanie w toku...</strong>';
 
+    const country = document.getElementById('countryFilter').value;
+    const city = document.getElementById('cityFilter').value;
+
     const formData = new FormData();
     if (sourceQuery) formData.set('source_query', sourceQuery);
+    if (country) formData.set('country', country);
+    if (city) formData.set('city', city);
 
     fetch('/email-scraping/scrape', { method: 'POST', body: formData })
         .then(r => r.json())
@@ -177,6 +241,9 @@ document.getElementById('emailScrapeForm').addEventListener('submit', function(e
                 resultDiv.innerHTML = `<div class="alert alert-danger py-1">${esc(data.error)}</div>`;
                 btn.disabled = false;
                 return;
+            }
+            if (data.status === 'queued') {
+                document.getElementById('scrapeStatusText').innerHTML = '<strong>W kolejce — oczekiwanie na zakończenie poprzedniego skanowania...</strong>';
             }
             pollEmailScrape(data.op_id);
         })
@@ -193,8 +260,13 @@ function pollEmailScrape(opId) {
         fetch(`/email-scraping/scrape/status/${opId}`)
             .then(r => r.json())
             .then(data => {
-                document.getElementById('scrapeStatusText').innerHTML =
-                    '<strong>' + esc(data.details || 'Skanowanie...') + '</strong>';
+                if (data.status === 'queued') {
+                    document.getElementById('scrapeStatusText').innerHTML =
+                        '<strong>W kolejce — oczekiwanie na zakończenie poprzedniego skanowania...</strong>';
+                } else {
+                    document.getElementById('scrapeStatusText').innerHTML =
+                        '<strong>' + esc(data.details || 'Skanowanie...') + '</strong>';
+                }
 
                 if (data.status === 'done' || data.status === 'error') {
                     clearInterval(interval);
@@ -234,6 +306,7 @@ function loadEmailTasks() {
                 let badge = 'secondary';
                 let label = t.status;
                 if (t.status === 'running') { badge = 'primary'; label = 'W toku'; }
+                else if (t.status === 'queued') { badge = 'info'; label = 'W kolejce'; }
                 else if (t.status === 'done') { badge = 'success'; label = 'Zakonczone'; }
                 else if (t.status === 'error') { badge = 'danger'; label = 'Blad'; }
 
@@ -353,6 +426,7 @@ function truncate(s, len) {
 // ===================== INIT =====================
 
 loadSourceQueries();
+loadLocations();
 loadEmailTasks();
 loadEmails();
 </script>
