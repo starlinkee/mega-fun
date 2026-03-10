@@ -4,6 +4,7 @@ import os
 import re
 import time
 import json
+import threading
 
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session, make_response
 from app.db import get_db
@@ -136,15 +137,16 @@ def api_dashboard_stats():
 
     stats = {}
 
-    # Scrapes (operations_log)
-    stats["scrapes_total"] = db.execute(
-        "SELECT COUNT(*) FROM operations_log"
+
+    # Google API calls (estimated from scrape_areas: each area = ceil(results_count/20) pages, min 1)
+    stats["api_calls_total"] = db.execute(
+        "SELECT COALESCE(SUM(MAX(1, (results_count + 19) / 20)), 0) FROM scrape_areas"
     ).fetchone()[0]
-    stats["scrapes_month"] = db.execute(
-        "SELECT COUNT(*) FROM operations_log WHERE strftime('%Y-%m', started_at, 'localtime') = strftime('%Y-%m', 'now', 'localtime')"
+    stats["api_calls_month"] = db.execute(
+        "SELECT COALESCE(SUM(MAX(1, (results_count + 19) / 20)), 0) FROM scrape_areas WHERE strftime('%Y-%m', created_at, 'localtime') = strftime('%Y-%m', 'now', 'localtime')"
     ).fetchone()[0]
-    stats["scrapes_today"] = db.execute(
-        "SELECT COUNT(*) FROM operations_log WHERE date(started_at, 'localtime') = date('now', 'localtime')"
+    stats["api_calls_today"] = db.execute(
+        "SELECT COALESCE(SUM(MAX(1, (results_count + 19) / 20)), 0) FROM scrape_areas WHERE date(created_at, 'localtime') = date('now', 'localtime')"
     ).fetchone()[0]
 
     # Businesses
@@ -305,39 +307,112 @@ def api_businesses():
     })
 
 
-@main_bp.route("/google-maps/scrape", methods=["POST"])
-def start_scrape():
-    """Start Google Maps scrape as subprocess."""
-    query = request.form.get("query", "").strip()
-    coords_sw = request.form.get("coords_sw", "").strip()
-    coords_ne = request.form.get("coords_ne", "").strip()
+def _run_batch(queries, coords_sw, coords_ne, batch_op_id):
+    """Run multiple scrape queries sequentially in a background thread."""
+    script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "scrape_google_maps.py")
+    total = len(queries)
+    errors = []
 
-    if not query:
-        return jsonify({"error": "Podaj zapytanie"}), 400
+    for i, query in enumerate(queries):
+        # Update batch progress indicator
+        db = get_db()
+        db.execute(
+            "UPDATE operations_log SET details = ? WHERE id = ?",
+            (f"Zapytanie {i + 1}/{total}: {query}...", batch_op_id),
+        )
+        db.commit()
+        db.close()
 
-    # Create operation log entry first
+        # Create individual op entry for this query
+        db = get_db()
+        cursor = db.execute(
+            "INSERT INTO operations_log (operation_type, status, details) VALUES ('google_maps_scrape', 'running', ?)",
+            (f"Query: {query}",),
+        )
+        child_op_id = cursor.lastrowid
+        db.commit()
+        db.close()
+
+        cmd = [sys.executable, script, query, "--op-id", str(child_op_id)]
+        if coords_sw and coords_ne:
+            cmd += ["--coords-sw", coords_sw, "--coords-ne", coords_ne]
+
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        _scrape_processes[child_op_id] = proc
+        proc.wait()  # block until this query finishes before starting next
+        _scrape_processes.pop(child_op_id, None)
+
+        db = get_db()
+        child_row = db.execute("SELECT status FROM operations_log WHERE id = ?", (child_op_id,)).fetchone()
+        db.close()
+        if child_row and child_row["status"] == "error":
+            errors.append(query)
+
+    # Mark batch op as finished
     db = get_db()
-    cursor = db.execute(
-        "INSERT INTO operations_log (operation_type, status, details) VALUES ('google_maps_scrape', 'running', ?)",
-        (f"Query: {query}",),
+    if errors:
+        summary = f"Zakończono {total} zapytań, błędy w: {', '.join(errors)}"
+    else:
+        summary = f"Zakończono {total} zapytań: {', '.join(queries)}"
+    db.execute(
+        "UPDATE operations_log SET status = 'done', details = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (summary, batch_op_id),
     )
-    op_id = cursor.lastrowid
     db.commit()
     db.close()
 
-    # Launch subprocess
-    script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "scrape_google_maps.py")
-    cmd = [sys.executable, script, query, "--op-id", str(op_id)]
-    if coords_sw and coords_ne:
-        cmd += ["--coords-sw", coords_sw, "--coords-ne", coords_ne]
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    _scrape_processes[op_id] = proc
 
-    return jsonify({"op_id": op_id, "status": "running"})
+@main_bp.route("/google-maps/scrape", methods=["POST"])
+def start_scrape():
+    """Start Google Maps scrape as subprocess (supports comma-separated multi-query)."""
+    query_raw = request.form.get("query", "").strip()
+    queries = [q.strip() for q in query_raw.split(",") if q.strip()]
+    coords_sw = request.form.get("coords_sw", "").strip()
+    coords_ne = request.form.get("coords_ne", "").strip()
+
+    if not queries:
+        return jsonify({"error": "Podaj zapytanie"}), 400
+
+    script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "scrape_google_maps.py")
+
+    if len(queries) == 1:
+        # Single query — original behavior unchanged
+        query = queries[0]
+        db = get_db()
+        cursor = db.execute(
+            "INSERT INTO operations_log (operation_type, status, details) VALUES ('google_maps_scrape', 'running', ?)",
+            (f"Query: {query}",),
+        )
+        op_id = cursor.lastrowid
+        db.commit()
+        db.close()
+
+        cmd = [sys.executable, script, query, "--op-id", str(op_id)]
+        if coords_sw and coords_ne:
+            cmd += ["--coords-sw", coords_sw, "--coords-ne", coords_ne]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        _scrape_processes[op_id] = proc
+
+        return jsonify({"op_id": op_id, "status": "running"})
+
+    else:
+        # Multi-query batch — parent op tracks progress; each query runs sequentially
+        db = get_db()
+        cursor = db.execute(
+            "INSERT INTO operations_log (operation_type, status, details) VALUES ('google_maps_batch', 'running', ?)",
+            (f"0/{len(queries)}: {queries[0]}...",),
+        )
+        batch_op_id = cursor.lastrowid
+        db.commit()
+        db.close()
+
+        threading.Thread(
+            target=_run_batch,
+            args=(queries, coords_sw, coords_ne, batch_op_id),
+            daemon=True,
+        ).start()
+
+        return jsonify({"op_id": batch_op_id, "status": "running"})
 
 
 @main_bp.route("/google-maps/scrape/status/<int:op_id>")

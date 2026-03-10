@@ -11,9 +11,9 @@
             <div class="card-body">
                 <form id="scrapeForm">
                     <div class="mb-2">
-                        <label class="form-label">Zapytanie (np. "restauracje")</label>
+                        <label class="form-label">Zapytanie (np. "restauracje") — wiele po przecinku</label>
                         <input type="text" name="query" id="scrapeQuery" class="form-control" required
-                               placeholder="restauracje">
+                               placeholder="restauracje, hotele, kawiarnie">
                     </div>
                     <div class="row g-2 mb-2">
                         <div class="col-6">
@@ -75,7 +75,8 @@
                         <th>#</th>
                         <th>Zapytanie</th>
                         <th>Status</th>
-                        <th>Lokale</th>
+                        <th>Znaleziono</th>
+                        <th>Nowych</th>
                         <th>Rozpoczeto</th>
                         <th>Zakonczono</th>
                     </tr>
@@ -300,6 +301,16 @@ function applyFilter() {
     if (map) renderAreas();
 }
 
+function parseFound(details) {
+    const m = (details || '').match(/Znaleziono\s+(\d+)/);
+    return m ? `<span class="badge bg-secondary">${m[1]}</span>` : '<span class="text-muted">-</span>';
+}
+
+function parseSaved(details) {
+    const m = (details || '').match(/zapisano\s+(\d+)\s+nowych/);
+    return m ? `<span class="badge bg-success">${m[1]}</span>` : '<span class="text-muted">-</span>';
+}
+
 function renderTasks() {
     const tasks = activeFilter
         ? allTasks.filter(t => t.source_query === activeFilter)
@@ -309,7 +320,7 @@ function renderTasks() {
     const tbody = document.getElementById('tasksTableBody');
 
     if (!tasks.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Brak zadan</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Brak zadan</td></tr>';
         return;
     }
 
@@ -329,7 +340,8 @@ function renderTasks() {
             <td>${t.id}</td>
             <td>${esc(t.source_query || t.details || '')}</td>
             <td><span class="badge bg-${badge}">${label}</span></td>
-            <td>${businessCell}</td>
+            <td>${parseFound(t.details)}</td>
+            <td>${parseSaved(t.details)}</td>
             <td><small>${t.started_at || ''}</small></td>
             <td><small>${t.finished_at || '-'}</small></td>
         </tr>`;

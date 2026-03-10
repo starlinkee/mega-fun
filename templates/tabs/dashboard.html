@@ -6,60 +6,60 @@
     <div class="col-md-4 col-lg-2">
         <div class="card text-center">
             <div class="card-body">
-                <h6 class="card-subtitle mb-2 text-muted">Zescrapowane strony</h6>
-                <div class="mb-1"><span class="fs-3 fw-bold text-accent" id="scrapes_total">-</span></div>
-                <small class="text-muted">Ten miesiąc: <strong id="scrapes_month">-</strong></small><br>
-                <small class="text-muted">Dzisiaj: <strong id="scrapes_today">-</strong></small>
+                <div class="mb-1"><span class="fs-5 fw-bold text-accent">Zapytania Google API</span></div>
+                <small class="text-muted">Dzisiaj: <strong id="api_calls_today">-</strong></small><br>
+                <small class="text-muted">Ten miesiąc: <strong id="api_calls_month">-</strong></small><br>
+                <small class="text-muted">W sumie: <strong id="api_calls_total">-</strong></small>
             </div>
         </div>
     </div>
     <div class="col-md-4 col-lg-2">
         <div class="card text-center">
             <div class="card-body">
-                <h6 class="card-subtitle mb-2 text-muted">Nowe biznesy</h6>
-                <div class="mb-1"><span class="fs-3 fw-bold text-accent" id="businesses_total">-</span></div>
+                <div class="mb-1"><span class="fs-5 fw-bold text-accent">Nowe biznesy</span></div>
+                <small class="text-muted">Dzisiaj: <strong id="businesses_today">-</strong></small><br>
                 <small class="text-muted">Ten miesiąc: <strong id="businesses_month">-</strong></small><br>
-                <small class="text-muted">Dzisiaj: <strong id="businesses_today">-</strong></small>
+                <small class="text-muted">W sumie: <strong id="businesses_total">-</strong></small>
             </div>
         </div>
     </div>
     <div class="col-md-4 col-lg-2">
         <div class="card text-center">
             <div class="card-body">
-                <h6 class="card-subtitle mb-2 text-muted">Strony WWW</h6>
-                <div class="mb-1"><span class="fs-3 fw-bold text-accent" id="websites_total">-</span></div>
+                <div class="mb-1"><span class="fs-5 fw-bold text-accent">Strony WWW</span></div>
+                <small class="text-muted">Dzisiaj: <strong id="websites_today">-</strong></small><br>
                 <small class="text-muted">Ten miesiąc: <strong id="websites_month">-</strong></small><br>
-                <small class="text-muted">Dzisiaj: <strong id="websites_today">-</strong></small>
+                <small class="text-muted">W sumie: <strong id="websites_total">-</strong></small>
             </div>
         </div>
     </div>
     <div class="col-md-4 col-lg-2">
         <div class="card text-center">
             <div class="card-body">
-                <h6 class="card-subtitle mb-2 text-muted">Maile zescrapowane</h6>
-                <div class="mb-1"><span class="fs-3 fw-bold text-accent" id="emails_total">-</span></div>
+                <div class="mb-1"><span class="fs-5 fw-bold text-accent">Maile zescrapowane</span></div>
+                <small class="text-muted">Dzisiaj: <strong id="emails_today">-</strong></small><br>
                 <small class="text-muted">Ten miesiąc: <strong id="emails_month">-</strong></small><br>
-                <small class="text-muted">Dzisiaj: <strong id="emails_today">-</strong></small>
+                <small class="text-muted">W sumie: <strong id="emails_total">-</strong></small>
             </div>
         </div>
     </div>
     <div class="col-md-4 col-lg-2">
         <div class="card text-center">
             <div class="card-body">
-                <h6 class="card-subtitle mb-2 text-muted">Kampanie</h6>
-                <div class="mb-1"><span class="fs-3 fw-bold text-accent" id="campaigns_total">-</span></div>
+                <div class="mb-1"><span class="fs-5 fw-bold text-accent">Kampanie</span></div>
+                <small class="text-muted">Dzisiaj: <strong id="campaigns_today">-</strong></small><br>
                 <small class="text-muted">Ten miesiąc: <strong id="campaigns_month">-</strong></small><br>
-                <small class="text-muted">Dzisiaj: <strong id="campaigns_today">-</strong></small>
+                <small class="text-muted">W sumie: <strong id="campaigns_total">-</strong></small>
             </div>
         </div>
     </div>
     <div class="col-md-4 col-lg-2">
         <div class="card text-center">
             <div class="card-body">
-                <h6 class="card-subtitle mb-2 text-muted">Maile wysłane</h6>
-                <div class="mb-1"><span class="fs-3 fw-bold text-accent" id="sent_total">-</span></div>
+                <div class="mb-1"><span class="fs-5 fw-bold text-accent">Maile wysłane</span></div>
+                <small class="text-muted">Dzisiaj: <strong id="sent_today">-</strong></small><br>
                 <small class="text-muted">Ten miesiąc: <strong id="sent_month">-</strong></small><br>
-                <small class="text-muted">Dzisiaj: <strong id="sent_today">-</strong></small>
+                <small class="text-muted">W sumie: <strong id="sent_total">-</strong></small>
             </div>
         </div>
     </div>
@@ -69,7 +69,7 @@
 {% block scripts %}
 <script>
 const STAT_KEYS = [
-    'scrapes_total', 'scrapes_month', 'scrapes_today',
+    'api_calls_total', 'api_calls_month', 'api_calls_today',
     'businesses_total', 'businesses_month', 'businesses_today',
     'websites_total', 'websites_month', 'websites_today',
     'emails_total', 'emails_month', 'emails_today',
