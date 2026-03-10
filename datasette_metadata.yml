@@ -1,0 +1,4 @@
+title: "Mega-Fun DB Viewer"
+description: "Podgląd bazy danych"
+extra_css_urls:
+  - /db-viewer/-/static/custom/custom.css

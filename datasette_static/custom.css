@@ -1,0 +1,177 @@
+/* ===================== MEGA-FUN DARK THEME FOR DATASETTE ===================== */
+
+:root {
+    --bg-body:        #09090b;
+    --bg-surface:     #18181b;
+    --bg-card:        #1c1c1f;
+    --bg-input:       #27272a;
+    --border-color:   #3f3f46;
+    --border-subtle:  #2a2a2f;
+    --accent:         #6366f1;
+    --accent-hover:   #4f46e5;
+    --text-primary:   #fafafa;
+    --text-secondary: #a1a1aa;
+    --text-muted:     #71717a;
+}
+
+/* ---- Base ---- */
+body {
+    background: var(--bg-body) !important;
+    color: var(--text-primary) !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif !important;
+    font-size: 14px !important;
+}
+
+a, a:visited {
+    color: var(--accent) !important;
+}
+a:hover {
+    color: var(--accent-hover) !important;
+    text-decoration: none !important;
+}
+
+/* ---- Nav / header ---- */
+header, nav, .nav {
+    background: #111113 !important;
+    border-bottom: 1px solid var(--border-subtle) !important;
+}
+
+nav a, nav a:visited {
+    color: var(--text-secondary) !important;
+}
+nav a:hover {
+    color: var(--text-primary) !important;
+}
+
+/* ---- Content area ---- */
+.content-wrapper, .page-header, main {
+    background: var(--bg-body) !important;
+}
+
+/* ---- Tables ---- */
+table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+    font-size: 13px !important;
+}
+
+th {
+    background: var(--bg-surface) !important;
+    color: var(--text-secondary) !important;
+    border: 1px solid var(--border-color) !important;
+    padding: 8px 12px !important;
+    text-align: left !important;
+    font-weight: 600 !important;
+    font-size: 12px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.04em !important;
+}
+
+td {
+    background: var(--bg-card) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border-subtle) !important;
+    padding: 7px 12px !important;
+    vertical-align: top !important;
+    max-width: 400px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+tr:hover td {
+    background: #222226 !important;
+}
+
+/* ---- Inputs / forms ---- */
+input, textarea, select {
+    background: var(--bg-input) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 6px !important;
+    padding: 6px 10px !important;
+    font-family: inherit !important;
+    font-size: 13px !important;
+}
+
+input:focus, textarea:focus, select:focus {
+    outline: none !important;
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25) !important;
+}
+
+/* ---- Buttons ---- */
+button, input[type="submit"], .btn {
+    background: var(--accent) !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 6px !important;
+    padding: 6px 14px !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: background 0.15s !important;
+}
+
+button:hover, input[type="submit"]:hover, .btn:hover {
+    background: var(--accent-hover) !important;
+}
+
+/* ---- Code / SQL editor ---- */
+pre, code {
+    background: var(--bg-surface) !important;
+    color: #a5f3a5 !important;
+    border: 1px solid var(--border-subtle) !important;
+    border-radius: 6px !important;
+    padding: 2px 6px !important;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace !important;
+    font-size: 12px !important;
+}
+
+pre {
+    padding: 12px 16px !important;
+    overflow-x: auto !important;
+}
+
+/* ---- Pagination ---- */
+.pagination a, .pagination span {
+    background: var(--bg-surface) !important;
+    color: var(--text-secondary) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 4px !important;
+    padding: 4px 10px !important;
+    margin: 0 2px !important;
+    display: inline-block !important;
+}
+
+.pagination a:hover {
+    background: var(--accent) !important;
+    color: #fff !important;
+    border-color: var(--accent) !important;
+}
+
+/* ---- Filters / search bar ---- */
+.filter-row td {
+    background: var(--bg-surface) !important;
+}
+
+/* ---- Messages / alerts ---- */
+.message-error, .message-warning {
+    background: #3b1c1c !important;
+    border: 1px solid #7f1d1d !important;
+    color: #fca5a5 !important;
+    border-radius: 6px !important;
+    padding: 10px 14px !important;
+}
+
+/* ---- Metadata blocks ---- */
+.db-title, h1, h2, h3 {
+    color: var(--text-primary) !important;
+    font-weight: 600 !important;
+}
+
+/* ---- Scrollbar (webkit) ---- */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg-body); }
+::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #52525b; }

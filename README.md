@@ -93,6 +93,11 @@ sudo systemctl enable mega-fun-datasette
 sudo systemctl start mega-fun-datasette
 ```
 
+> Datasette musi znać swój base URL (`/db-viewer/`) żeby generować poprawne linki wewnętrzne. Nginx strippuje ten prefix przed przekazaniem do datasette, ale datasette sam dodaje go do wszystkich generowanych linków.
+
+```
+```
+
 Po tej jednorazowej konfiguracji każdy deploy automatycznie restartuje datasette.
 
 ### Zarządzanie
