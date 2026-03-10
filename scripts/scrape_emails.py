@@ -279,8 +279,12 @@ def main():
     try:
         db = get_db()
 
-        # Build query for businesses with websites
-        conditions = ["website IS NOT NULL", "website != ''"]
+        # Build query for businesses with websites (skip those that already have emails)
+        conditions = [
+            "website IS NOT NULL",
+            "website != ''",
+            "id NOT IN (SELECT DISTINCT business_id FROM emails WHERE business_id IS NOT NULL)",
+        ]
         params = []
 
         if args.business_ids:
