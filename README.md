@@ -63,3 +63,15 @@ Każde wywołanie `send_campaign.py`:
 1. Znajduje aktywną kampanię (najstarsza pierwsza)
 2. Wysyła jeden email z każdej aktywnej skrzynki mailowej
 3. Gdy kampania skończy się, oznacza ją jako `done` i aktywuje następną z kolejki
+
+### Limit skrzynek mailowych
+
+Skrypt czeka **1-2 sekundy** między wysyłkami z kolejnych skrzynek (ochrona przed spamem).
+Przy cronie co minutę (60 sek) bezpieczny limit to **max 20 aktywnych skrzynek**.
+
+Jeśli potrzebujesz więcej skrzynek, zmień cron na rzadszy interwał:
+| Skrzynek | Minimalny interwał crona |
+|---|---|
+| 20 | `* * * * *` (co minutę) |
+| 50 | `*/3 * * * *` (co 3 minuty) |
+| 100 | `*/7 * * * *` (co 7 minut) |

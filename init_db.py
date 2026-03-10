@@ -127,6 +127,11 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    try:
+        c.execute("ALTER TABLE mailboxes ADD COLUMN daily_limit INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
     conn.commit()
     conn.close()
     print(f"Database initialized: {DATABASE}")

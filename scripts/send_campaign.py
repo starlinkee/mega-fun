@@ -14,6 +14,8 @@ Cron entry example:  * * * * *  cd /path/to/mega-fun && python scripts/send_camp
 import sys
 import os
 import smtplib
+import time
+import random
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -121,6 +123,11 @@ def main():
             print(f"Daily email limit reached ({daily_limit}). Stopping this round.")
             break
 
+        # Check per-mailbox daily limit
+        if mb["daily_limit"] > 0 and mb["daily_sent"] >= mb["daily_limit"]:
+            print(f"Mailbox {mb['email']} reached daily limit ({mb['daily_sent']}/{mb['daily_limit']}). Skipping.")
+            continue
+
         # Pick one pending email for this campaign
         pending = db.execute(
             """SELECT ce.id AS ce_id, e.email AS recipient
@@ -175,6 +182,7 @@ def main():
             print(f"Failed {recipient} from {mb['email']}: {error}")
 
         db.commit()
+        time.sleep(random.uniform(1, 2))
 
     # Check if there are still pending emails after this round
     remaining = db.execute(

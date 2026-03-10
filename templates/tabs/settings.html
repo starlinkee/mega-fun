@@ -40,6 +40,10 @@
                             <input type="number" class="form-control form-control-sm" name="smtp_port" value="587" placeholder="Port">
                         </div>
                     </div>
+                    <div class="mb-2">
+                        <input type="number" class="form-control form-control-sm" name="daily_limit" value="0" min="0" placeholder="Limit dzienny (0 = bez limitu)">
+                        <div class="form-text">Max emaili dziennie z tej skrzynki (0 = bez limitu)</div>
+                    </div>
                     <button type="submit" class="btn btn-success btn-sm">Dodaj</button>
                     <span class="form-status ms-2" id="mailboxStatus"></span>
                 </form>
@@ -100,6 +104,7 @@
                     <th>SMTP</th>
                     <th>Port</th>
                     <th>Aktywna</th>
+                    <th>Limit dzienny</th>
                     <th>Wysłano dziś</th>
                     <th>Wysłano w sumie</th>
                     <th>Ostatnia wysyłka</th>
@@ -114,6 +119,13 @@
                     <td>{{ m.smtp_server }}</td>
                     <td>{{ m.smtp_port }}</td>
                     <td>{{ "Tak" if m.active else "Nie" }}</td>
+                    <td>
+                        <div class="input-group input-group-sm" style="width:100px">
+                            <input type="number" class="form-control form-control-sm" value="{{ m.daily_limit or 0 }}" min="0"
+                                   id="limit-{{ m.id }}" style="width:60px">
+                            <button class="btn btn-outline-secondary btn-sm" onclick="saveMailboxLimit({{ m.id }})">✓</button>
+                        </div>
+                    </td>
                     <td>{{ m.daily_sent }}</td>
                     <td>{{ m.total_sent or 0 }}</td>
                     <td>{{ m.last_sent_at or "—" }}</td>
@@ -249,6 +261,40 @@ document.getElementById('mailboxForm').addEventListener('submit', function(e) {
             showStatus(status, 'Błąd: ' + err.message, 'error');
         });
 });
+
+// --- Save mailbox daily limit ---
+function saveMailboxLimit(id) {
+    const input = document.getElementById('limit-' + id);
+    const btn = input.nextElementSibling;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '...';
+
+    const fd = new FormData();
+    fd.append('daily_limit', input.value);
+
+    fetch('/settings/mailbox/' + id + '/limit', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            if (data.error) {
+                btn.textContent = '✗';
+                setTimeout(() => { btn.textContent = original; }, 2000);
+            } else {
+                btn.textContent = '✓';
+                btn.classList.replace('btn-outline-secondary', 'btn-success');
+                setTimeout(() => {
+                    btn.textContent = original;
+                    btn.classList.replace('btn-success', 'btn-outline-secondary');
+                }, 1500);
+            }
+        })
+        .catch(() => {
+            btn.disabled = false;
+            btn.textContent = '✗';
+            setTimeout(() => { btn.textContent = original; }, 2000);
+        });
+}
 
 // --- Delete mailbox ---
 function deleteMailbox(id, btn) {

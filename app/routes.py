@@ -813,12 +813,16 @@ def add_mailbox():
     password = request.form.get("password", "").strip()
     smtp_server = request.form.get("smtp_server", "smtp.purelymail.com").strip()
     smtp_port = int(request.form.get("smtp_port", 587))
+    try:
+        daily_limit = max(0, int(request.form.get("daily_limit", 0)))
+    except ValueError:
+        daily_limit = 0
 
     if email and password:
         db = get_db()
         db.execute(
-            "INSERT INTO mailboxes (email, password, smtp_server, smtp_port) VALUES (?, ?, ?, ?)",
-            (email, encrypt(password), smtp_server, smtp_port),
+            "INSERT INTO mailboxes (email, password, smtp_server, smtp_port, daily_limit) VALUES (?, ?, ?, ?, ?)",
+            (email, encrypt(password), smtp_server, smtp_port, daily_limit),
         )
         db.commit()
         db.close()
@@ -826,6 +830,19 @@ def add_mailbox():
     if is_ajax:
         return jsonify({"ok": True})
     return redirect(url_for("main.tab_settings"))
+
+
+@main_bp.route("/settings/mailbox/<int:mailbox_id>/limit", methods=["POST"])
+def update_mailbox_limit(mailbox_id):
+    try:
+        daily_limit = max(0, int(request.form.get("daily_limit", 0)))
+    except ValueError:
+        daily_limit = 0
+    db = get_db()
+    db.execute("UPDATE mailboxes SET daily_limit = ? WHERE id = ?", (daily_limit, mailbox_id))
+    db.commit()
+    db.close()
+    return jsonify({"ok": True})
 
 
 @main_bp.route("/settings/mailbox/<int:mailbox_id>/delete", methods=["POST"])
