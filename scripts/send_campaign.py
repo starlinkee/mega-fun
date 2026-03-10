@@ -16,6 +16,7 @@ import os
 import smtplib
 import time
 import random
+import uuid
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -34,7 +35,15 @@ def get_db():
     return conn
 
 
-def send_email(smtp_server, smtp_port, sender_email, sender_password, to_email, subject, body):
+def get_tracking_base_url(db):
+    """Return tracking base URL from settings, or empty string if not set."""
+    row = db.execute("SELECT value FROM settings WHERE key = 'tracking_base_url'").fetchone()
+    if row and row["value"]:
+        return row["value"].rstrip("/")
+    return ""
+
+
+def send_email(smtp_server, smtp_port, sender_email, sender_password, to_email, subject, body, tracking_url=None):
     """Send a single email via SMTP. Returns (success, error)."""
     try:
         msg = MIMEMultipart("alternative")
@@ -42,6 +51,15 @@ def send_email(smtp_server, smtp_port, sender_email, sender_password, to_email, 
         msg["To"] = to_email
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "plain", "utf-8"))
+
+        if tracking_url:
+            html_body = body.replace("\n", "<br>")
+            html = (
+                f"<html><body><p>{html_body}</p>"
+                f'<img src="{tracking_url}" width="1" height="1" style="display:none" alt="" />'
+                f"</body></html>"
+            )
+            msg.attach(MIMEText(html, "html", "utf-8"))
 
         with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server:
             server.starttls()
@@ -85,6 +103,7 @@ def get_total_sent_today(db):
 
 def main():
     db = get_db()
+    tracking_base_url = get_tracking_base_url(db)
 
     # Check global daily email limit
     daily_limit = get_daily_limit(db)
@@ -150,17 +169,22 @@ def main():
         ce_id = pending["ce_id"]
         recipient = pending["recipient"]
 
+        # Generate tracking token
+        token = uuid.uuid4().hex
+
         # Mark as sending to avoid double-pick
         db.execute(
-            "UPDATE campaign_emails SET status = 'sending', mailbox_id = ? WHERE id = ?",
-            (mb["id"], ce_id),
+            "UPDATE campaign_emails SET status = 'sending', mailbox_id = ?, open_token = ? WHERE id = ?",
+            (mb["id"], token, ce_id),
         )
         db.commit()
+
+        tracking_url = f"{tracking_base_url}/track/{token}" if tracking_base_url else None
 
         success, error = send_email(
             mb["smtp_server"], mb["smtp_port"],
             mb["email"], decrypt(mb["password"]),
-            recipient, subject, body,
+            recipient, subject, body, tracking_url,
         )
 
         if success:

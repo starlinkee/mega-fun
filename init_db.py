@@ -159,6 +159,17 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    # Tracking pixel columns
+    for col_def in [
+        "open_token TEXT",
+        "opened_at TIMESTAMP",
+        "open_count INTEGER DEFAULT 0",
+    ]:
+        try:
+            c.execute(f"ALTER TABLE campaign_emails ADD COLUMN {col_def}")
+        except sqlite3.OperationalError:
+            pass
+
     conn.commit()
     conn.close()
     print(f"Database initialized: {DATABASE}")

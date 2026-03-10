@@ -5,7 +5,7 @@ import re
 import time
 import json
 
-from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session
+from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session, make_response
 from app.db import get_db
 from app.crypto import encrypt, decrypt
 from config import APP_PASSWORD
@@ -37,9 +37,43 @@ main_bp = Blueprint("main", __name__)
 _scrape_processes = {}
 
 
+# 1x1 transparent GIF (binary)
+_PIXEL_GIF = (
+    b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00"
+    b"!\xf9\x04\x00\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01"
+    b"\x00\x00\x02\x02D\x01\x00;"
+)
+
+
+@main_bp.route("/track/<token>")
+def track_open(token):
+    """Tracking pixel — public, no auth required."""
+    db = get_db()
+    row = db.execute(
+        "SELECT id, opened_at FROM campaign_emails WHERE open_token = ?", (token,)
+    ).fetchone()
+    if row:
+        if row["opened_at"] is None:
+            db.execute(
+                "UPDATE campaign_emails SET opened_at = CURRENT_TIMESTAMP, open_count = 1 WHERE id = ?",
+                (row["id"],),
+            )
+        else:
+            db.execute(
+                "UPDATE campaign_emails SET open_count = open_count + 1 WHERE id = ?",
+                (row["id"],),
+            )
+        db.commit()
+    db.close()
+    resp = make_response(_PIXEL_GIF)
+    resp.headers["Content-Type"] = "image/gif"
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return resp
+
+
 @main_bp.before_app_request
 def require_login():
-    allowed = ("main.login", "static")
+    allowed = ("main.login", "main.track_open", "static")
     if request.endpoint in allowed:
         return
     if not session.get("authenticated"):
@@ -889,7 +923,7 @@ def api_sent_emails():
     ).fetchone()[0]
 
     rows = db.execute(
-        f"""SELECT ce.id, ce.sent_at,
+        f"""SELECT ce.id, ce.sent_at, ce.opened_at, ce.open_count,
                    e.email AS recipient_email,
                    b.name AS business_name,
                    c.id AS campaign_id, c.name AS campaign_name, c.subject, c.body_template,
@@ -963,6 +997,16 @@ def save_email_scraping_settings():
         max_pages = "10"
     db = get_db()
     db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('email_max_pages', ?)", (max_pages,))
+    db.commit()
+    db.close()
+    return jsonify({"ok": True})
+
+
+@main_bp.route("/settings/tracking-url", methods=["POST"])
+def save_tracking_url():
+    url = request.form.get("tracking_base_url", "").strip().rstrip("/")
+    db = get_db()
+    db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('tracking_base_url', ?)", (url,))
     db.commit()
     db.close()
     return jsonify({"ok": True})

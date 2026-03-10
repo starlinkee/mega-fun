@@ -42,11 +42,12 @@
                         <th>Kampania</th>
                         <th>Temat</th>
                         <th style="width:160px">Z skrzynki</th>
+                        <th style="width:90px">Otwarto</th>
                         <th style="width:70px"></th>
                     </tr>
                 </thead>
                 <tbody id="sentBody">
-                    <tr><td colspan="7" class="text-center text-muted py-4">Ładowanie...</td></tr>
+                    <tr><td colspan="8" class="text-center text-muted py-4">Ładowanie...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -147,7 +148,7 @@ function fmt(ts) {
 function renderTable(emails) {
     const tbody = document.getElementById('sentBody');
     if (!emails.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Brak wysłanych maili</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Brak wysłanych maili</td></tr>';
         return;
     }
     tbody.innerHTML = emails.map(e => `
@@ -158,6 +159,12 @@ function renderTable(emails) {
             <td class="small">${esc(e.campaign_name || '—')}</td>
             <td class="small text-truncate" style="max-width:180px" title="${esc(e.subject || '')}">${esc(e.subject || '—')}</td>
             <td class="small text-muted">${esc(e.mailbox_email || '—')}</td>
+            <td class="small">
+                ${e.opened_at
+                    ? `<span class="text-success" title="${fmt(e.opened_at)}">&#10003; ${e.open_count > 1 ? '(' + e.open_count + 'x)' : ''}</span>`
+                    : '<span class="text-muted">—</span>'
+                }
+            </td>
             <td>
                 <button class="btn btn-xs btn-outline-secondary py-0 px-2" onclick='showPreview(${JSON.stringify(e)})'>
                     Podgląd

@@ -92,6 +92,28 @@
     </div>
 </div>
 
+<!-- Tracking pixel URL -->
+<div class="row">
+    <div class="col-md-6 mb-3">
+        <div class="card">
+            <div class="card-header">Tracking pixel (otwarte emaile)</div>
+            <div class="card-body">
+                <form id="trackingUrlForm" method="POST" action="/settings/tracking-url">
+                    <div class="mb-3">
+                        <label class="form-label">Publiczny URL serwera</label>
+                        <input type="url" class="form-control" name="tracking_base_url"
+                               value="{{ settings.get('tracking_base_url', '') }}"
+                               placeholder="https://riskydev.com">
+                        <div class="form-text">Bez końcowego /. Jeśli puste — pixel nie będzie wstawiany do emaili.</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">Zapisz</button>
+                    <span class="form-status ms-2" id="trackingUrlStatus"></span>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Lista skrzynek -->
 <div class="card">
     <div class="card-header">Skrzynki mailowe ({{ mailboxes|length }})</div>
@@ -215,6 +237,32 @@ document.getElementById('dailyLimitForm').addEventListener('submit', function(e)
     const form = this;
     const btn = form.querySelector('button[type="submit"]');
     const status = document.getElementById('dailyLimitStatus');
+
+    btn.disabled = true;
+    showStatus(status, 'Zapisywanie...', 'loading');
+
+    fetch(form.action, { method: 'POST', body: new FormData(form) })
+        .then(r => r.json().catch(() => ({ ok: r.ok })))
+        .then(data => {
+            btn.disabled = false;
+            if (data.error) {
+                showStatus(status, data.error, 'error');
+            } else {
+                showStatus(status, 'Zapisano pomyślnie!', 'success');
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            showStatus(status, 'Błąd: ' + err.message, 'error');
+        });
+});
+
+// --- Tracking URL form ---
+document.getElementById('trackingUrlForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const form = this;
+    const btn = form.querySelector('button[type="submit"]');
+    const status = document.getElementById('trackingUrlStatus');
 
     btn.disabled = true;
     showStatus(status, 'Zapisywanie...', 'loading');
