@@ -5,3 +5,4 @@ beautifulsoup4==4.13.3
 lxml==5.3.1
 cryptography==44.0.0
 gunicorn==23.0.0
+datasette
