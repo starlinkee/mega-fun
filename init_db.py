@@ -132,6 +132,33 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    try:
+        c.execute("ALTER TABLE emails ADD COLUMN is_primary INTEGER DEFAULT 0")
+        # Mark the first email per business as primary for existing data
+        c.execute("""
+            UPDATE emails SET is_primary = 1
+            WHERE id IN (
+                SELECT MIN(id) FROM emails WHERE business_id IS NOT NULL GROUP BY business_id
+            )
+        """)
+    except sqlite3.OperationalError:
+        pass  # column already exists
+
+    try:
+        c.execute("ALTER TABLE businesses ADD COLUMN email_scraped_at TIMESTAMP")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        c.execute("ALTER TABLE businesses ADD COLUMN email_scraped_website TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        c.execute("ALTER TABLE businesses ADD COLUMN email_scrape_pending INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
     conn.commit()
     conn.close()
     print(f"Database initialized: {DATABASE}")

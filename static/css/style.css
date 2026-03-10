@@ -362,3 +362,61 @@ th.sort-desc::after { content: ' \2193'; opacity: 1; color: var(--accent); }
     background: rgba(255, 255, 255, 0.06);
     color: var(--text-primary);
 }
+
+/* TomSelect dark mode overrides */
+.ts-wrapper .ts-control {
+    background: var(--bg-input) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+    border-radius: 8px;
+    box-shadow: none !important;
+}
+
+.ts-wrapper.focus .ts-control,
+.ts-wrapper .ts-control:focus-within {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px var(--accent-glow) !important;
+}
+
+.ts-wrapper .ts-control input {
+    color: var(--text-primary) !important;
+}
+
+.ts-wrapper .ts-control input::placeholder {
+    color: var(--text-muted) !important;
+}
+
+.ts-wrapper .ts-control .item {
+    color: var(--text-primary) !important;
+    background: rgba(99, 102, 241, 0.2) !important;
+    border-color: rgba(99, 102, 241, 0.4) !important;
+}
+
+.ts-dropdown {
+    background: var(--bg-surface) !important;
+    border: 1px solid var(--border-color) !important;
+    color: var(--text-primary) !important;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+}
+
+.ts-dropdown .option {
+    color: var(--text-secondary) !important;
+    font-size: 0.875rem;
+}
+
+.ts-dropdown .option:hover,
+.ts-dropdown .option.active {
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: var(--text-primary) !important;
+}
+
+.ts-dropdown .option.selected {
+    background: rgba(99, 102, 241, 0.15) !important;
+    color: var(--text-primary) !important;
+}
+
+.ts-dropdown .no-results {
+    color: var(--text-muted) !important;
+    background: transparent !important;
+}

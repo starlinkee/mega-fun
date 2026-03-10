@@ -25,6 +25,13 @@
                     <option value="">Wszystkie miasta</option>
                 </select>
             </div>
+            <div class="col-auto">
+                <select id="websiteFilter" class="form-select form-select-sm">
+                    <option value="">Strona: wszystkie</option>
+                    <option value="1">Ma stronę</option>
+                    <option value="0">Bez strony</option>
+                </select>
+            </div>
         </div>
     </div>
     <div class="card-body p-0">
@@ -77,15 +84,17 @@ tsCity.on('change',     () => loadBusinesses(1));
 
 function loadBusinesses(page) {
     currentPage = page || 1;
-    const search   = document.getElementById('searchInput').value;
-    const cat      = tsCategory.getValue();
-    const country  = tsCountry.getValue();
-    const city     = tsCity.getValue();
+    const search      = document.getElementById('searchInput').value;
+    const cat         = tsCategory.getValue();
+    const country     = tsCountry.getValue();
+    const city        = tsCity.getValue();
+    const hasWebsite  = document.getElementById('websiteFilter').value;
     const params = new URLSearchParams({page: currentPage, per_page: PER_PAGE});
-    if (search)  params.set('search',   search);
-    if (cat)     params.set('category', cat);
-    if (country) params.set('country',  country);
-    if (city)    params.set('city',     city);
+    if (search)      params.set('search',      search);
+    if (cat)         params.set('category',    cat);
+    if (country)     params.set('country',     country);
+    if (city)        params.set('city',        city);
+    if (hasWebsite !== '') params.set('has_website', hasWebsite);
 
     fetch('/api/businesses?' + params)
         .then(r => r.json())
@@ -202,6 +211,8 @@ document.getElementById('searchInput').addEventListener('input', () => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => loadBusinesses(1), 300);
 });
+
+document.getElementById('websiteFilter').addEventListener('change', () => loadBusinesses(1));
 
 loadBusinesses(1);
 </script>

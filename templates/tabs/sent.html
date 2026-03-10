@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <h4 class="mb-0">Wysłane maile</h4>
+    <span id="totalCount" class="text-muted small"></span>
+</div>
+
+<!-- Filtry -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <input type="text" class="form-control form-control-sm" id="searchInput" placeholder="Szukaj: email, firma, kampania, temat...">
+            </div>
+            <div class="col-md-3">
+                <select class="form-select form-select-sm" id="campaignFilter">
+                    <option value="">Wszystkie kampanie</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select form-select-sm" id="mailboxFilter">
+                    <option value="">Wszystkie skrzynki</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-sm btn-secondary w-100" onclick="resetFilters()">Resetuj</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tabela -->
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0" id="sentTable">
+                <thead class="table-dark">
+                    <tr>
+                        <th style="width:145px">Data wysłania</th>
+                        <th>Do (email)</th>
+                        <th>Firma</th>
+                        <th>Kampania</th>
+                        <th>Temat</th>
+                        <th style="width:160px">Z skrzynki</th>
+                        <th style="width:70px"></th>
+                    </tr>
+                </thead>
+                <tbody id="sentBody">
+                    <tr><td colspan="7" class="text-center text-muted py-4">Ładowanie...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Paginacja -->
+<div class="d-flex justify-content-between align-items-center mt-2" id="paginationBar" style="display:none!important">
+    <div id="paginationInfo" class="text-muted small"></div>
+    <nav><ul class="pagination pagination-sm mb-0" id="paginationLinks"></ul></nav>
+</div>
+
+<!-- Modal: podgląd treści -->
+<div class="modal fade" id="previewModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <div class="fw-bold" id="modalSubject"></div>
+                    <div class="small text-muted mt-1">
+                        <span id="modalFrom"></span>
+                        &rarr;
+                        <span id="modalTo"></span>
+                        &nbsp;&bull;&nbsp;
+                        <span id="modalDate"></span>
+                    </div>
+                </div>
+                <button type="button" class="btn-close ms-auto" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-2 small text-muted">
+                    Kampania: <span id="modalCampaign"></span>
+                    &nbsp;&bull;&nbsp;
+                    Firma: <span id="modalBusiness"></span>
+                </div>
+                <hr>
+                <pre id="modalBody" style="white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:.9rem;margin:0"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentPage = 1;
+let totalPages = 1;
+let searchTimer = null;
+
+function getFilters() {
+    return {
+        search: document.getElementById('searchInput').value.trim(),
+        campaign_id: document.getElementById('campaignFilter').value,
+        mailbox_id: document.getElementById('mailboxFilter').value,
+    };
+}
+
+function resetFilters() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('campaignFilter').value = '';
+    document.getElementById('mailboxFilter').value = '';
+    currentPage = 1;
+    loadSent();
+}
+
+function loadSent(page) {
+    if (page) currentPage = page;
+    const f = getFilters();
+    const params = new URLSearchParams({
+        page: currentPage,
+        per_page: 50,
+        search: f.search,
+        campaign_id: f.campaign_id,
+        mailbox_id: f.mailbox_id,
+    });
+
+    fetch('/api/sent-emails?' + params)
+        .then(r => r.json())
+        .then(data => {
+            totalPages = data.pages || 1;
+            renderTable(data.emails);
+            renderPagination(data.total, data.page, data.per_page, data.pages);
+            populateFilters(data.campaigns, data.mailboxes);
+            document.getElementById('totalCount').textContent = 'Łącznie wysłanych: ' + data.total.toLocaleString('pl-PL');
+        })
+        .catch(err => {
+            document.getElementById('sentBody').innerHTML =
+                '<tr><td colspan="7" class="text-center text-danger">Błąd ładowania: ' + err.message + '</td></tr>';
+        });
+}
+
+function fmt(ts) {
+    if (!ts) return '—';
+    const d = new Date(ts.replace(' ', 'T') + (ts.includes('+') ? '' : 'Z'));
+    return d.toLocaleString('pl-PL', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+
+function renderTable(emails) {
+    const tbody = document.getElementById('sentBody');
+    if (!emails.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Brak wysłanych maili</td></tr>';
+        return;
+    }
+    tbody.innerHTML = emails.map(e => `
+        <tr>
+            <td class="text-muted small">${fmt(e.sent_at)}</td>
+            <td><code class="text-info">${esc(e.recipient_email || '—')}</code></td>
+            <td class="small">${esc(e.business_name || '—')}</td>
+            <td class="small">${esc(e.campaign_name || '—')}</td>
+            <td class="small text-truncate" style="max-width:180px" title="${esc(e.subject || '')}">${esc(e.subject || '—')}</td>
+            <td class="small text-muted">${esc(e.mailbox_email || '—')}</td>
+            <td>
+                <button class="btn btn-xs btn-outline-secondary py-0 px-2" onclick='showPreview(${JSON.stringify(e)})'>
+                    Podgląd
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function showPreview(e) {
+    document.getElementById('modalSubject').textContent = e.subject || '(brak tematu)';
+    document.getElementById('modalFrom').textContent = e.mailbox_email || '—';
+    document.getElementById('modalTo').textContent = e.recipient_email || '—';
+    document.getElementById('modalDate').textContent = fmt(e.sent_at);
+    document.getElementById('modalCampaign').textContent = e.campaign_name || '—';
+    document.getElementById('modalBusiness').textContent = e.business_name || '—';
+    document.getElementById('modalBody').textContent = e.body_template || '(brak treści)';
+    new bootstrap.Modal(document.getElementById('previewModal')).show();
+}
+
+function renderPagination(total, page, per_page, pages) {
+    const bar = document.getElementById('paginationBar');
+    const info = document.getElementById('paginationInfo');
+    const links = document.getElementById('paginationLinks');
+
+    if (pages <= 1) { bar.style.display = 'none'; return; }
+    bar.style.removeProperty('display');
+
+    const from = (page - 1) * per_page + 1;
+    const to = Math.min(page * per_page, total);
+    info.textContent = `Pokazuję ${from}–${to} z ${total}`;
+
+    let html = '';
+    html += `<li class="page-item ${page === 1 ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="loadSent(${page-1});return false">&laquo;</a></li>`;
+
+    const range = visiblePages(page, pages);
+    for (const p of range) {
+        if (p === '…') {
+            html += '<li class="page-item disabled"><span class="page-link">…</span></li>';
+        } else {
+            html += `<li class="page-item ${p === page ? 'active' : ''}">
+                <a class="page-link" href="#" onclick="loadSent(${p});return false">${p}</a></li>`;
+        }
+    }
+
+    html += `<li class="page-item ${page === pages ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="loadSent(${page+1});return false">&raquo;</a></li>`;
+    links.innerHTML = html;
+}
+
+function visiblePages(cur, total) {
+    if (total <= 7) return Array.from({length: total}, (_, i) => i + 1);
+    const pages = [];
+    pages.push(1);
+    if (cur > 3) pages.push('…');
+    for (let p = Math.max(2, cur-1); p <= Math.min(total-1, cur+1); p++) pages.push(p);
+    if (cur < total - 2) pages.push('…');
+    pages.push(total);
+    return pages;
+}
+
+let _filtersPopulated = false;
+function populateFilters(campaigns, mailboxes) {
+    if (_filtersPopulated) return;
+    _filtersPopulated = true;
+
+    const cs = document.getElementById('campaignFilter');
+    campaigns.forEach(c => {
+        const o = document.createElement('option');
+        o.value = c.id;
+        o.textContent = c.name;
+        cs.appendChild(o);
+    });
+
+    const ms = document.getElementById('mailboxFilter');
+    mailboxes.forEach(m => {
+        const o = document.createElement('option');
+        o.value = m.id;
+        o.textContent = m.email;
+        ms.appendChild(o);
+    });
+}
+
+document.getElementById('searchInput').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { currentPage = 1; loadSent(); }, 350);
+});
+document.getElementById('campaignFilter').addEventListener('change', () => { currentPage = 1; loadSent(); });
+document.getElementById('mailboxFilter').addEventListener('change', () => { currentPage = 1; loadSent(); });
+
+loadSent();
+setInterval(loadSent, 15000);
+</script>
+
+<style>
+.btn-xs { font-size: .75rem; line-height: 1.4; }
+code.text-info { font-size: .85rem; }
+</style>
+{% endblock %}

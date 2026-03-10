@@ -189,12 +189,24 @@ def api_businesses():
     category = request.args.get("category", "").strip()
     country = request.args.get("country", "").strip()
     city = request.args.get("city", "").strip()
+    has_website = request.args.get("has_website", "").strip()
+    no_email = request.args.get("no_email", "").strip()
+    not_scraped = request.args.get("not_scraped", "").strip()
 
     per_page = min(per_page, 200)
     offset = (page - 1) * per_page
 
     conditions = []
     params = []
+    if has_website == "1":
+        conditions.append("(website IS NOT NULL AND website != '')")
+    elif has_website == "0":
+        conditions.append("(website IS NULL OR website = '')")
+    if no_email == "1":
+        conditions.append("id NOT IN (SELECT DISTINCT business_id FROM emails WHERE business_id IS NOT NULL)")
+    if not_scraped == "1":
+        conditions.append("(email_scraped_at IS NULL OR COALESCE(email_scraped_website, '') != COALESCE(website, ''))")
+        conditions.append("COALESCE(email_scrape_pending, 0) = 0")
     if search:
         conditions.append("(name LIKE ? OR address LIKE ? OR phone LIKE ? OR website LIKE ?)")
         like = f"%{search}%"
@@ -417,7 +429,9 @@ def _launch_email_scrape_subprocess(op_id, source_query, business_ids, country, 
     env["SCRAPE_BUSINESS_IDS"] = business_ids or ""
     env["SCRAPE_COUNTRY"] = country or ""
     env["SCRAPE_CITY"] = city or ""
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    # Use DEVNULL for stdout/stderr — status is tracked via operations_log (DB polling).
+    # PIPE would fill the 4-8 KB Windows pipe buffer and cause the subprocess to block/fail.
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
     _email_scrape_processes[op_id] = proc
 
 
@@ -522,6 +536,18 @@ def start_email_scrape():
 @main_bp.route("/email-scraping/scrape/status/<int:op_id>")
 def email_scrape_status(op_id):
     """Check email scrape operation status. Promotes next queued job when current finishes."""
+    # Check ALL tracked processes for completion — not just this op_id.
+    # This handles the case where the frontend is polling a queued job's status
+    # while the previously running process finishes without its own status being polled.
+    promoted = False
+    for pid in list(_email_scrape_processes.keys()):
+        proc = _email_scrape_processes.get(pid)
+        if proc and proc.poll() is not None:
+            _email_scrape_processes.pop(pid, None)
+            if not promoted:
+                _promote_next_email_scrape()
+                promoted = True
+
     db = get_db()
     row = db.execute("SELECT * FROM operations_log WHERE id = ?", (op_id,)).fetchone()
     db.close()
@@ -529,15 +555,7 @@ def email_scrape_status(op_id):
     if not row:
         return jsonify({"error": "Operacja nie znaleziona"}), 404
 
-    result = {"op_id": op_id, "status": row["status"], "details": row["details"]}
-
-    proc = _email_scrape_processes.get(op_id)
-    if proc and proc.poll() is not None:
-        _email_scrape_processes.pop(op_id, None)
-        # Process just finished — promote next queued scrape if any
-        _promote_next_email_scrape()
-
-    return jsonify(result)
+    return jsonify({"op_id": op_id, "status": row["status"], "details": row["details"]})
 
 
 @main_bp.route("/api/emails")
@@ -573,7 +591,7 @@ def api_emails():
 
     rows = db.execute(
         f"""SELECT e.id, e.email, e.source, e.created_at, e.business_id,
-                   b.name AS business_name, b.source_query
+                   e.is_primary, b.name AS business_name, b.source_query
             FROM emails e
             LEFT JOIN businesses b ON e.business_id = b.id
             {where}
@@ -610,6 +628,29 @@ def delete_email(email_id):
     return jsonify({"ok": True})
 
 
+@main_bp.route("/api/emails/<int:email_id>/set-primary", methods=["POST"])
+def set_primary_email(email_id):
+    """Set this email as primary for its business, clearing any other primary."""
+    db = get_db()
+    row = db.execute("SELECT business_id, is_primary FROM emails WHERE id = ?", (email_id,)).fetchone()
+    if not row:
+        db.close()
+        return jsonify({"error": "Nie znaleziono emaila"}), 404
+    business_id = row["business_id"]
+    # Toggle off if already primary
+    if row["is_primary"]:
+        db.execute("UPDATE emails SET is_primary = 0 WHERE id = ?", (email_id,))
+    else:
+        # Clear existing primary for this business, then set new one
+        if business_id:
+            db.execute("UPDATE emails SET is_primary = 0 WHERE business_id = ?", (business_id,))
+        db.execute("UPDATE emails SET is_primary = 1 WHERE id = ?", (email_id,))
+    db.commit()
+    new_val = db.execute("SELECT is_primary FROM emails WHERE id = ?", (email_id,)).fetchone()["is_primary"]
+    db.close()
+    return jsonify({"ok": True, "is_primary": new_val})
+
+
 @main_bp.route("/api/business-locations")
 def api_business_locations():
     """Return distinct countries and cities from businesses table."""
@@ -635,6 +676,22 @@ def api_business_locations():
 @main_bp.route("/api/email-scrape-tasks")
 def api_email_scrape_tasks():
     """Return email scrape operations from operations_log."""
+    # Auto-recover stuck queue: if no process is actually running but DB shows queued tasks,
+    # promote the next one. Also clean up finished processes.
+    for pid in list(_email_scrape_processes.keys()):
+        proc = _email_scrape_processes.get(pid)
+        if proc and proc.poll() is not None:
+            _email_scrape_processes.pop(pid, None)
+
+    if not _email_scrape_processes:
+        db = get_db()
+        still_running = db.execute(
+            "SELECT id FROM operations_log WHERE operation_type = 'email_scrape' AND status = 'running' LIMIT 1"
+        ).fetchone()
+        db.close()
+        if not still_running:
+            _promote_next_email_scrape()
+
     db = get_db()
     rows = db.execute(
         "SELECT * FROM operations_log WHERE operation_type = 'email_scrape' ORDER BY started_at DESC"
@@ -643,8 +700,43 @@ def api_email_scrape_tasks():
     return jsonify({"tasks": [dict(r) for r in rows]})
 
 
+@main_bp.route("/api/email-scrape-tasks/<int:op_id>/cancel", methods=["POST"])
+def cancel_email_scrape_task(op_id):
+    """Cancel a running or queued email scrape task. If running, kills process and promotes next queued."""
+    proc = _email_scrape_processes.pop(op_id, None)
+    if proc:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+
+    db = get_db()
+    row = db.execute("SELECT status FROM operations_log WHERE id = ?", (op_id,)).fetchone()
+    if not row:
+        db.close()
+        return jsonify({"error": "Nie znaleziono zadania"}), 404
+
+    was_running = row["status"] == "running"
+    db.execute(
+        "UPDATE operations_log SET status = 'error', details = 'Anulowano', finished_at = datetime('now') WHERE id = ?",
+        (op_id,),
+    )
+    db.commit()
+    db.close()
+
+    if was_running:
+        _promote_next_email_scrape()
+
+    return jsonify({"ok": True})
+
+
 @main_bp.route("/campaigns")
 def tab_campaigns():
+    return render_template("tabs/campaigns.html", active_tab="campaigns")
+
+
+@main_bp.route("/api/campaigns")
+def api_campaigns():
     db = get_db()
     campaigns = db.execute("SELECT * FROM campaigns ORDER BY created_at DESC").fetchall()
     campaigns_list = []
@@ -657,12 +749,8 @@ def tab_campaigns():
         d["sent"] = sent
         d["failed"] = failed
         campaigns_list.append(d)
-    categories = db.execute(
-        "SELECT DISTINCT category FROM businesses WHERE category IS NOT NULL AND category != '' ORDER BY category"
-    ).fetchall()
-    categories_list = [r["category"] for r in categories]
     db.close()
-    return render_template("tabs/campaigns.html", active_tab="campaigns", campaigns=campaigns_list, categories=categories_list)
+    return jsonify({"campaigns": campaigns_list})
 
 
 @main_bp.route("/campaigns/create", methods=["POST"])
@@ -689,11 +777,12 @@ def create_campaign():
     )
     campaign_id = cursor.lastrowid
 
-    # Add only emails not yet successfully sent in any previous campaign
+    # Add only primary emails not yet successfully sent in any previous campaign
     # Optionally filter by city and/or country
     query = """SELECT e.id FROM emails e
                JOIN businesses b ON e.business_id = b.id
-               WHERE e.id NOT IN (
+               WHERE e.is_primary = 1
+               AND e.id NOT IN (
                    SELECT email_id FROM campaign_emails WHERE status IN ('sent', 'failed')
                )"""
     params = []
@@ -752,6 +841,92 @@ def delete_campaign(campaign_id):
     db.close()
     return jsonify({"ok": True})
 
+
+
+@main_bp.route("/sent")
+def tab_sent():
+    return render_template("tabs/sent.html", active_tab="sent")
+
+
+@main_bp.route("/api/sent-emails")
+def api_sent_emails():
+    """AJAX endpoint: list all sent emails with campaign/mailbox/recipient info."""
+    db = get_db()
+
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 50, type=int)
+    search = request.args.get("search", "").strip()
+    campaign_id = request.args.get("campaign_id", "").strip()
+    mailbox_id = request.args.get("mailbox_id", "").strip()
+
+    per_page = min(per_page, 200)
+    offset = (page - 1) * per_page
+
+    conditions = ["ce.status = 'sent'"]
+    params = []
+
+    if search:
+        conditions.append("(e.email LIKE ? OR b.name LIKE ? OR c.name LIKE ? OR c.subject LIKE ?)")
+        like = f"%{search}%"
+        params.extend([like, like, like, like])
+    if campaign_id:
+        conditions.append("ce.campaign_id = ?")
+        params.append(campaign_id)
+    if mailbox_id:
+        conditions.append("ce.mailbox_id = ?")
+        params.append(mailbox_id)
+
+    where = "WHERE " + " AND ".join(conditions)
+
+    total = db.execute(
+        f"""SELECT COUNT(*) FROM campaign_emails ce
+            LEFT JOIN emails e ON ce.email_id = e.id
+            LEFT JOIN businesses b ON e.business_id = b.id
+            LEFT JOIN campaigns c ON ce.campaign_id = c.id
+            LEFT JOIN mailboxes m ON ce.mailbox_id = m.id
+            {where}""",
+        params,
+    ).fetchone()[0]
+
+    rows = db.execute(
+        f"""SELECT ce.id, ce.sent_at,
+                   e.email AS recipient_email,
+                   b.name AS business_name,
+                   c.id AS campaign_id, c.name AS campaign_name, c.subject, c.body_template,
+                   m.email AS mailbox_email
+            FROM campaign_emails ce
+            LEFT JOIN emails e ON ce.email_id = e.id
+            LEFT JOIN businesses b ON e.business_id = b.id
+            LEFT JOIN campaigns c ON ce.campaign_id = c.id
+            LEFT JOIN mailboxes m ON ce.mailbox_id = m.id
+            {where}
+            ORDER BY ce.sent_at DESC LIMIT ? OFFSET ?""",
+        params + [per_page, offset],
+    ).fetchall()
+
+    campaigns_filter = db.execute(
+        """SELECT DISTINCT c.id, c.name FROM campaign_emails ce
+           JOIN campaigns c ON ce.campaign_id = c.id
+           WHERE ce.status = 'sent' ORDER BY c.name"""
+    ).fetchall()
+
+    mailboxes_filter = db.execute(
+        """SELECT DISTINCT m.id, m.email FROM campaign_emails ce
+           JOIN mailboxes m ON ce.mailbox_id = m.id
+           WHERE ce.status = 'sent' ORDER BY m.email"""
+    ).fetchall()
+
+    db.close()
+
+    return jsonify({
+        "emails": [dict(r) for r in rows],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": (total + per_page - 1) // per_page if per_page else 1,
+        "campaigns": [dict(c) for c in campaigns_filter],
+        "mailboxes": [dict(m) for m in mailboxes_filter],
+    })
 
 
 @main_bp.route("/settings")

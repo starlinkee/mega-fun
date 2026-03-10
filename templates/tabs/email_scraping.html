@@ -66,10 +66,11 @@
                             <th>Szczegoly</th>
                             <th>Rozpoczeto</th>
                             <th>Zakonczono</th>
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody id="tasksTableBody">
-                        <tr><td colspan="5" class="text-center text-muted">Ladowanie...</td></tr>
+                        <tr><td colspan="6" class="text-center text-muted">Ladowanie...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -96,6 +97,7 @@
                 <thead>
                     <tr>
                         <th>#</th>
+                        <th title="Tylko primary emaile sa wysylane w kampaniach">&#9733;</th>
                         <th>Email</th>
                         <th>Biznes</th>
                         <th>Zrodlo (URL)</th>
@@ -105,7 +107,7 @@
                     </tr>
                 </thead>
                 <tbody id="emailsTableBody">
-                    <tr><td colspan="7" class="text-center text-muted">Ladowanie...</td></tr>
+                    <tr><td colspan="8" class="text-center text-muted">Ladowanie...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -185,22 +187,33 @@ function updateBizCount() {
     const country = document.getElementById('countryFilter').value;
     const city = document.getElementById('cityFilter').value;
 
-    let url = '/api/businesses?per_page=1';
+    let url = '/api/businesses?per_page=1&has_website=1&no_email=1&not_scraped=1';
     if (sq) url += '&source_query=' + encodeURIComponent(sq);
     if (country) url += '&country=' + encodeURIComponent(country);
     if (city) url += '&city=' + encodeURIComponent(city);
 
-    fetch(url)
-        .then(r => r.json())
-        .then(data => {
-            const total = data.total || 0;
-            const parts = [];
-            if (sq) parts.push(`query: ${sq}`);
-            if (country) parts.push(country);
-            if (city) parts.push(city);
+    Promise.all([
+        fetch(url).then(r => r.json()),
+        fetch('/api/email-scrape-tasks').then(r => r.json())
+    ]).then(([bizData, tasksData]) => {
+        const total = bizData.total || 0;
+        const parts = [];
+        if (sq) parts.push(`query: ${sq}`);
+        if (country) parts.push(country);
+        if (city) parts.push(city);
+
+        const tasks = tasksData.tasks || [];
+        const isActive = tasks.some(t => t.status === 'running' || t.status === 'queued');
+        const suffix = parts.length ? ` (${parts.join(', ')})` : '';
+
+        if (isActive) {
             document.getElementById('bizCount').textContent =
-                `${total} biznesow w bazie` + (parts.length ? ` (${parts.join(', ')})` : '');
-        });
+                `${total} biznesow z www bez maila (nieskanowanych)${suffix} — skanowanie w toku`;
+        } else {
+            document.getElementById('bizCount').textContent =
+                `${total} biznesow z www bez maila (nieskanowanych)${suffix}`;
+        }
+    });
 }
 
 document.getElementById('sourceQueryFilter').addEventListener('change', updateBizCount);
@@ -245,6 +258,7 @@ document.getElementById('emailScrapeForm').addEventListener('submit', function(e
             if (data.status === 'queued') {
                 document.getElementById('scrapeStatusText').innerHTML = '<strong>W kolejce — oczekiwanie na zakończenie poprzedniego skanowania...</strong>';
             }
+            loadEmailTasks();
             pollEmailScrape(data.op_id);
         })
         .catch(err => {
@@ -268,6 +282,8 @@ function pollEmailScrape(opId) {
                         '<strong>' + esc(data.details || 'Skanowanie...') + '</strong>';
                 }
 
+                updateBizCount();
+
                 if (data.status === 'done' || data.status === 'error') {
                     clearInterval(interval);
                     document.getElementById('scrapeStatus').style.display = 'none';
@@ -281,6 +297,7 @@ function pollEmailScrape(opId) {
                     if (data.status === 'done') {
                         loadEmailTasks();
                         loadEmails();
+                        updateBizCount();
                     }
                 }
             });
@@ -298,7 +315,7 @@ function loadEmailTasks() {
             const tbody = document.getElementById('tasksTableBody');
 
             if (!tasks.length) {
-                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Brak zadan</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Brak zadan</td></tr>';
                 return;
             }
 
@@ -310,15 +327,27 @@ function loadEmailTasks() {
                 else if (t.status === 'done') { badge = 'success'; label = 'Zakonczone'; }
                 else if (t.status === 'error') { badge = 'danger'; label = 'Blad'; }
 
+                const canCancel = t.status === 'running' || t.status === 'queued';
+                const cancelBtn = canCancel
+                    ? `<button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="cancelEmailTask(${t.id})" title="Anuluj">&times;</button>`
+                    : '';
                 return `<tr>
                     <td>${t.id}</td>
                     <td><span class="badge bg-${badge}">${label}</span></td>
                     <td><small>${esc(t.details || '')}</small></td>
                     <td><small>${t.started_at || ''}</small></td>
                     <td><small>${t.finished_at || '-'}</small></td>
+                    <td>${cancelBtn}</td>
                 </tr>`;
             }).join('');
         });
+}
+
+function cancelEmailTask(id) {
+    if (!confirm('Anulowac to zadanie?')) return;
+    fetch(`/api/email-scrape-tasks/${id}/cancel`, { method: 'POST' })
+        .then(r => r.json())
+        .then(() => { loadEmailTasks(); updateBizCount(); });
 }
 
 // ===================== EMAILS TABLE =====================
@@ -342,7 +371,7 @@ function loadEmails() {
 
             const tbody = document.getElementById('emailsTableBody');
             if (!emails.length) {
-                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Brak emaili</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">Brak emaili</td></tr>';
                 document.getElementById('emailsPagination').textContent = '';
                 document.getElementById('emailsPager').innerHTML = '';
                 return;
@@ -350,8 +379,13 @@ function loadEmails() {
 
             tbody.innerHTML = emails.map((e, idx) => {
                 const num = (emailPage - 1) * emailPerPage + idx + 1;
+                const starClass = e.is_primary ? 'text-warning' : 'text-secondary opacity-25';
+                const starTitle = e.is_primary ? 'Primary — kliknij aby odznacz' : 'Kliknij aby ustawic jako primary';
                 return `<tr>
                     <td>${num}</td>
+                    <td>
+                        <button class="btn btn-link p-0 ${starClass}" onclick="setPrimary(${e.id}, this)" title="${starTitle}" style="font-size:1.1rem; line-height:1;">&#9733;</button>
+                    </td>
                     <td><strong>${esc(e.email)}</strong></td>
                     <td>${esc(e.business_name || '-')}</td>
                     <td><small>${e.source ? `<a href="${esc(e.source)}" target="_blank" rel="noopener">${truncate(e.source, 40)}</a>` : '-'}</small></td>
@@ -399,6 +433,26 @@ function deleteEmail(id) {
         .then(() => loadEmails());
 }
 
+function setPrimary(id, btn) {
+    fetch(`/api/emails/${id}/set-primary`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                if (data.is_primary) {
+                    btn.classList.remove('text-secondary', 'opacity-25');
+                    btn.classList.add('text-warning');
+                    btn.title = 'Primary — kliknij aby odznacz';
+                    // Dim all other stars in the same business row (reload for simplicity)
+                    loadEmails();
+                } else {
+                    btn.classList.remove('text-warning');
+                    btn.classList.add('text-secondary', 'opacity-25');
+                    btn.title = 'Kliknij aby ustawic jako primary';
+                }
+            }
+        });
+}
+
 // Debounced search
 document.getElementById('emailSearch').addEventListener('input', function() {
     clearTimeout(searchTimeout);
@@ -429,5 +483,7 @@ loadSourceQueries();
 loadLocations();
 loadEmailTasks();
 loadEmails();
+setInterval(loadEmailTasks, 5000);
+setInterval(loadEmails, 15000);
 </script>
 {% endblock %}

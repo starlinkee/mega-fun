@@ -13,6 +13,18 @@ def create_app():
         db.commit()
     except Exception:
         pass  # column already exists
+    try:
+        db.execute("ALTER TABLE emails ADD COLUMN is_primary INTEGER DEFAULT 0")
+        # Mark the first email per business as primary for existing data
+        db.execute("""
+            UPDATE emails SET is_primary = 1
+            WHERE id IN (
+                SELECT MIN(id) FROM emails WHERE business_id IS NOT NULL GROUP BY business_id
+            ) AND is_primary = 0
+        """)
+        db.commit()
+    except Exception:
+        pass  # column already exists
     db.close()
 
     from app.routes import main_bp
