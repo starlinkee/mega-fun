@@ -74,6 +74,18 @@ ln -sf /etc/nginx/sites-available/mega-fun /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl restart nginx
 
+echo "=== Installing rclone (for Google Drive backups) ==="
+curl https://rclone.org/install.sh | bash
+
 echo ""
 echo "=== DONE! ==="
 echo "App is running on http://$(curl -s ifconfig.me)"
+echo ""
+echo "=== NEXT STEP: Configure Google Drive backups ==="
+echo "Run: rclone config"
+echo "  - New remote, name: gdrive"
+echo "  - Type: drive (Google Drive)"
+echo "  - Leave Client ID and Secret empty"
+echo "  - Scope: 1 (full access)"
+echo "  - Auto config: y (opens browser for Google login)"
+echo "Then test: bash /opt/mega-fun/scripts/backup_db.sh"

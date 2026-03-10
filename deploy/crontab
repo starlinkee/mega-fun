@@ -11,3 +11,6 @@
 
 # Reset dziennego licznika emaili o północy
 0 0 * * * cd /opt/mega-fun && /opt/mega-fun/venv/bin/python scripts/reset_daily_sent.py >> /var/log/mega-fun-cron.log 2>&1
+
+# Backup bazy danych co noc o 3:00
+0 3 * * * bash /opt/mega-fun/scripts/backup_db.sh

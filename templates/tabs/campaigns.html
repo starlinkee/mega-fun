@@ -22,15 +22,19 @@
             <div class="row mb-3">
                 <div class="col-md-4">
                     <label class="form-label">Kraj <small class="text-muted">(opcjonalnie)</small></label>
-                    <input type="text" class="form-control" name="target_country" placeholder="np. Poland">
+                    <select class="form-select" name="target_country" id="tsTargetCountry">
+                        <option value="">Wszystkie kraje</option>
+                    </select>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Miasto <small class="text-muted">(opcjonalnie)</small></label>
-                    <input type="text" class="form-control" name="target_city" placeholder="np. Kraków">
+                    <select class="form-select" name="target_city" id="tsTargetCity">
+                        <option value="">Wszystkie miasta</option>
+                    </select>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Kategoria biznesu <small class="text-muted">(opcjonalnie)</small></label>
-                    <select class="form-select" name="target_category">
+                    <select class="form-select" name="target_category" id="tsTargetCategory">
                         <option value="">Wszystkie kategorie</option>
                         {% for cat in categories %}
                             <option value="{{ cat }}">{{ cat }}</option>
@@ -123,6 +127,18 @@
 
 {% block scripts %}
 <script>
+// Searchable dropdowns
+const tsTargetCategory = new TomSelect('#tsTargetCategory', { allowEmptyOption: true, maxOptions: 5000 });
+const tsTargetCountry  = new TomSelect('#tsTargetCountry',  { allowEmptyOption: true, maxOptions: 5000, create: true, createOnBlur: true });
+const tsTargetCity     = new TomSelect('#tsTargetCity',     { allowEmptyOption: true, maxOptions: 5000, create: true, createOnBlur: true });
+
+fetch('/api/businesses?per_page=1&page=1')
+    .then(r => r.json())
+    .then(data => {
+        (data.countries || []).forEach(c => { if (c) tsTargetCountry.addOption({value: c, text: c}); });
+        (data.cities    || []).forEach(c => { if (c) tsTargetCity.addOption({value: c, text: c}); });
+    });
+
 function showStatus(el, message, type) {
     if (type === 'loading') {
         el.innerHTML = '<span class="text-success"><span class="spinner-border spinner-border-sm"></span> <strong>' + message + '</strong></span>';

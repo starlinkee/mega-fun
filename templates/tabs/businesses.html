@@ -67,26 +67,34 @@ let currentPage = 1;
 let debounceTimer = null;
 let currentSort = {col: null, asc: true};
 
+const tsOpts = { allowEmptyOption: true, maxOptions: 5000 };
+const tsCategory = new TomSelect('#categoryFilter', tsOpts);
+const tsCountry  = new TomSelect('#countryFilter',  tsOpts);
+const tsCity     = new TomSelect('#cityFilter',     tsOpts);
+tsCategory.on('change', () => loadBusinesses(1));
+tsCountry.on('change',  () => loadBusinesses(1));
+tsCity.on('change',     () => loadBusinesses(1));
+
 function loadBusinesses(page) {
     currentPage = page || 1;
-    const search = document.getElementById('searchInput').value;
-    const cat = document.getElementById('categoryFilter').value;
-    const country = document.getElementById('countryFilter').value;
-    const city = document.getElementById('cityFilter').value;
+    const search   = document.getElementById('searchInput').value;
+    const cat      = tsCategory.getValue();
+    const country  = tsCountry.getValue();
+    const city     = tsCity.getValue();
     const params = new URLSearchParams({page: currentPage, per_page: PER_PAGE});
-    if (search) params.set('search', search);
-    if (cat) params.set('category', cat);
-    if (country) params.set('country', country);
-    if (city) params.set('city', city);
+    if (search)  params.set('search',   search);
+    if (cat)     params.set('category', cat);
+    if (country) params.set('country',  country);
+    if (city)    params.set('city',     city);
 
     fetch('/api/businesses?' + params)
         .then(r => r.json())
         .then(data => {
             renderTable(data.businesses);
             renderPagination(data.page, data.pages, data.total);
-            updateCategoryFilter(data.categories);
-            updateSelectFilter('countryFilter', data.countries, 'Wszystkie kraje');
-            updateSelectFilter('cityFilter', data.cities, 'Wszystkie miasta');
+            updateTomSelect(tsCategory, data.categories, 'Wszystkie kategorie');
+            updateTomSelect(tsCountry,  data.countries,  'Wszystkie kraje');
+            updateTomSelect(tsCity,     data.cities,     'Wszystkie miasta');
             document.getElementById('bizCount').textContent =
                 `Wyszukane biznesy (${data.total})`;
         });
@@ -175,24 +183,13 @@ function renderPagination(page, pages, total) {
     nav.innerHTML = html;
 }
 
-function updateCategoryFilter(categories) {
-    const sel = document.getElementById('categoryFilter');
-    const current = sel.value;
-    const opts = ['<option value="">Wszystkie kategorie</option>'];
-    categories.forEach(c => {
-        opts.push(`<option value="${esc(c)}" ${c===current?'selected':''}>${esc(c)}</option>`);
-    });
-    sel.innerHTML = opts.join('');
-}
-
-function updateSelectFilter(id, items, placeholder) {
-    const sel = document.getElementById(id);
-    const current = sel.value;
-    const opts = [`<option value="">${placeholder}</option>`];
-    items.forEach(v => {
-        opts.push(`<option value="${esc(v)}" ${v===current?'selected':''}>${esc(v)}</option>`);
-    });
-    sel.innerHTML = opts.join('');
+function updateTomSelect(ts, items, placeholder) {
+    const current = ts.getValue();
+    ts.clearOptions();
+    ts.addOption({value: '', text: placeholder});
+    (items || []).forEach(v => { if (v) ts.addOption({value: v, text: v}); });
+    const keep = (current && items && items.includes(current)) ? current : '';
+    ts.setValue(keep, true);
 }
 
 function esc(s) {
@@ -205,9 +202,6 @@ document.getElementById('searchInput').addEventListener('input', () => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => loadBusinesses(1), 300);
 });
-document.getElementById('categoryFilter').addEventListener('change', () => loadBusinesses(1));
-document.getElementById('countryFilter').addEventListener('change', () => loadBusinesses(1));
-document.getElementById('cityFilter').addEventListener('change', () => loadBusinesses(1));
 
 loadBusinesses(1);
 </script>
