@@ -57,6 +57,52 @@ Na VPS logi wysyłki dostępne w:
 tail -f /var/log/mega-fun-cron.log
 ```
 
+## DB Viewer (Datasette)
+
+Baza danych jest dostępna przez przeglądarkę pod adresem `https://riskydev.com/db-viewer/`.
+
+Link "DB Viewer" w navbarze aplikacji prowadzi do tego widoku.
+
+### Jednorazowa konfiguracja na VPS
+
+**1. Zainstaluj datasette:**
+```bash
+pipx install datasette
+```
+
+**2. Dodaj nginx location block** w `/etc/nginx/sites-enabled/riskydev.com` (przed `location /static`):
+```nginx
+location /db-viewer/ {
+    proxy_pass http://127.0.0.1:8081/db-viewer/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+```bash
+nginx -t && systemctl reload nginx
+```
+
+**3. Zainstaluj i uruchom serwis systemd:**
+```bash
+sudo cp /opt/mega-fun/deploy/mega-fun-datasette.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable mega-fun-datasette
+sudo systemctl start mega-fun-datasette
+```
+
+Po tej jednorazowej konfiguracji każdy deploy automatycznie restartuje datasette.
+
+### Zarządzanie
+
+```bash
+systemctl status mega-fun-datasette
+systemctl restart mega-fun-datasette
+journalctl -u mega-fun-datasette -f
+```
+
 ## Backup bazy danych
 
 Baza danych (`mega_fun.db`) jest automatycznie backupowana co noc o **3:00** przez skrypt `scripts/backup_db.sh`.

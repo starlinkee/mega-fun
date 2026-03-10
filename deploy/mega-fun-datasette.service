@@ -1,0 +1,13 @@
+[Unit]
+Description=Datasette DB Viewer for Mega-Fun
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/opt/mega-fun
+ExecStart=/root/.local/bin/datasette mega_fun.db --port 8081 --host 127.0.0.1 --setting base_url /db-viewer/
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
