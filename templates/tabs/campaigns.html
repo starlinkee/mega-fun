@@ -39,6 +39,9 @@
                     </select>
                 </div>
             </div>
+            <div class="mb-3 mt-1">
+                <small class="text-muted">Szacowana liczba odbiorców (primary maile, jeszcze niewysłane): <strong id="estimateCount">-</strong></small>
+            </div>
             <button type="submit" class="btn btn-success" id="createBtn">Utwórz i uruchom kampanię</button>
             <span class="ms-2" id="campaignStatus"></span>
         </form>
@@ -229,6 +232,36 @@ function deleteCampaign(id, btn) {
         })
         .catch(err => { btn.disabled = false; alert('Błąd: ' + err.message); });
 }
+
+// ===================== ESTIMATE =====================
+
+let _estimateTimer = null;
+
+function updateEstimate() {
+    const country  = tsTargetCountry.getValue();
+    const city     = tsTargetCity.getValue();
+    const category = tsTargetCategory.getValue();
+    const params = new URLSearchParams();
+    if (country)  params.set('country',  country);
+    if (city)     params.set('city',     city);
+    if (category) params.set('category', category);
+    fetch('/api/campaign-estimate?' + params)
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('estimateCount').textContent = data.count.toLocaleString('pl-PL');
+        })
+        .catch(() => {});
+}
+
+function scheduleEstimate() {
+    clearTimeout(_estimateTimer);
+    _estimateTimer = setTimeout(updateEstimate, 300);
+}
+
+tsTargetCountry.on('change',  scheduleEstimate);
+tsTargetCity.on('change',     scheduleEstimate);
+tsTargetCategory.on('change', scheduleEstimate);
+updateEstimate();
 
 // ===================== INIT =====================
 

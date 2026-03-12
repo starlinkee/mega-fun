@@ -63,6 +63,16 @@
             </div>
         </div>
     </div>
+    <div class="col-md-4 col-lg-2">
+        <div class="card text-center">
+            <div class="card-body">
+                <div class="mb-1"><span class="fs-5 fw-bold text-accent">Maile primary</span></div>
+                <small class="text-muted">Dzisiaj: <strong id="primary_emails_today">-</strong></small><br>
+                <small class="text-muted">Ten miesiąc: <strong id="primary_emails_month">-</strong></small><br>
+                <small class="text-muted">W sumie: <strong id="primary_emails_total">-</strong></small>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -74,7 +84,8 @@ const STAT_KEYS = [
     'websites_total', 'websites_month', 'websites_today',
     'emails_total', 'emails_month', 'emails_today',
     'campaigns_total', 'campaigns_month', 'campaigns_today',
-    'sent_total', 'sent_month', 'sent_today'
+    'sent_total', 'sent_month', 'sent_today',
+    'primary_emails_total', 'primary_emails_month', 'primary_emails_today'
 ];
 
 function loadStats() {

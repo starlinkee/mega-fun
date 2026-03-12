@@ -30,7 +30,7 @@ from config import DATABASE
 DEFAULT_MAX_PAGES = 5
 
 # Number of concurrent worker threads for scraping
-NUM_WORKERS = 15
+NUM_WORKERS = 25
 
 # Email regex — matches common email patterns
 EMAIL_RE = re.compile(
@@ -302,7 +302,7 @@ def crawl_website(url, max_pages):
                 safe_url = sanitize_url(current_url)
                 if safe_url is None:
                     continue
-                resp = requests.get(safe_url, headers=HEADERS, timeout=5, allow_redirects=True)
+                resp = requests.get(safe_url, headers=HEADERS, timeout=2, allow_redirects=True)
                 # Rate-limited or blocked — skip entire domain
                 if resp.status_code == 429:
                     break

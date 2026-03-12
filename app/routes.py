@@ -204,6 +204,17 @@ def api_dashboard_stats():
         "SELECT COUNT(*) FROM campaign_emails WHERE status = 'sent' AND date(sent_at, 'localtime') = date('now', 'localtime')"
     ).fetchone()[0]
 
+    # Primary emails
+    stats["primary_emails_total"] = db.execute(
+        "SELECT COUNT(*) FROM emails WHERE is_primary = 1"
+    ).fetchone()[0]
+    stats["primary_emails_month"] = db.execute(
+        "SELECT COUNT(*) FROM emails WHERE is_primary = 1 AND strftime('%Y-%m', created_at, 'localtime') = strftime('%Y-%m', 'now', 'localtime')"
+    ).fetchone()[0]
+    stats["primary_emails_today"] = db.execute(
+        "SELECT COUNT(*) FROM emails WHERE is_primary = 1 AND date(created_at, 'localtime') = date('now', 'localtime')"
+    ).fetchone()[0]
+
     db.close()
     return jsonify(stats)
 
@@ -860,6 +871,35 @@ def api_campaigns():
         campaigns_list.append(d)
     db.close()
     return jsonify({"campaigns": campaigns_list})
+
+
+@main_bp.route("/api/campaign-estimate")
+def api_campaign_estimate():
+    """Return count of primary emails eligible for a campaign with given filters."""
+    country = request.args.get("country", "").strip() or None
+    city = request.args.get("city", "").strip() or None
+    category = request.args.get("category", "").strip() or None
+
+    db = get_db()
+    query = """SELECT COUNT(*) FROM emails e
+               JOIN businesses b ON e.business_id = b.id
+               WHERE e.is_primary = 1
+               AND e.id NOT IN (
+                   SELECT email_id FROM campaign_emails WHERE status IN ('sent', 'failed')
+               )"""
+    params = []
+    if country:
+        query += " AND b.country = ?"
+        params.append(country)
+    if city:
+        query += " AND b.city = ?"
+        params.append(city)
+    if category:
+        query += " AND b.category = ?"
+        params.append(category)
+    count = db.execute(query, params).fetchone()[0]
+    db.close()
+    return jsonify({"count": count})
 
 
 @main_bp.route("/campaigns/create", methods=["POST"])
