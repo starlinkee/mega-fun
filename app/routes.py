@@ -885,7 +885,7 @@ def api_campaign_estimate():
                JOIN businesses b ON e.business_id = b.id
                WHERE e.is_primary = 1
                AND e.id NOT IN (
-                   SELECT email_id FROM campaign_emails WHERE status IN ('sent', 'failed')
+                   SELECT email_id FROM campaign_emails WHERE status IN ('pending', 'sending', 'sent', 'failed')
                )"""
     params = []
     if country:
@@ -932,7 +932,7 @@ def create_campaign():
                JOIN businesses b ON e.business_id = b.id
                WHERE e.is_primary = 1
                AND e.id NOT IN (
-                   SELECT email_id FROM campaign_emails WHERE status IN ('sent', 'failed')
+                   SELECT email_id FROM campaign_emails WHERE status IN ('pending', 'sending', 'sent', 'failed')
                )"""
     params = []
     if target_country:
