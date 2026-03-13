@@ -1,0 +1,14 @@
+[Unit]
+Description=Mega Fun Flask App
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/opt/mega-fun
+ExecStart=/opt/mega-fun/venv/bin/gunicorn --workers 2 --bind 127.0.0.1:5000 run:app
+Environment=TZ=Europe/Warsaw
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

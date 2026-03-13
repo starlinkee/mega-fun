@@ -6,6 +6,7 @@ After=network.target
 User=root
 WorkingDirectory=/opt/mega-fun
 ExecStart=/root/.local/bin/datasette mega_fun.db --port 8081 --host 127.0.0.1 --setting base_url /db-viewer/ --metadata /opt/mega-fun/datasette_metadata.yml --static custom:/opt/mega-fun/datasette_static
+Environment=TZ=Europe/Warsaw
 Restart=always
 RestartSec=5
 

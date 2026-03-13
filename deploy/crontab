@@ -1,9 +1,8 @@
-# Wysyłanie kampanii emailowych
-# Co 5 minut:
-* * * * * cd /opt/mega-fun && /opt/mega-fun/venv/bin/python scripts/send_campaign.py >> /var/log/mega-fun-cron.log 2>&1
+TZ=Europe/Warsaw
 
-# Co minutę (zakomentowane):
-# * * * * * cd /opt/mega-fun && /opt/mega-fun/venv/bin/python scripts/send_campaign.py >> /var/log/mega-fun-cron.log 2>&1
+# Wysyłanie kampanii emailowych
+# Co 1 minute:
+* * * * * cd /opt/mega-fun && /opt/mega-fun/venv/bin/python scripts/send_campaign.py >> /var/log/mega-fun-cron.log 2>&1
 
 # Co 30 sekund (odkomentuj obie linie poniżej i zakomentuj powyższą):
 # * * * * * cd /opt/mega-fun && /opt/mega-fun/venv/bin/python scripts/send_campaign.py >> /var/log/mega-fun-cron.log 2>&1

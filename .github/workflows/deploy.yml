@@ -15,11 +15,15 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
+            timedatectl set-timezone Europe/Warsaw
             cd /opt/mega-fun
             git pull origin main
             source venv/bin/activate
             pip install -r requirements.txt
             python3 init_db.py
+            sudo cp /opt/mega-fun/deploy/mega-fun.service /etc/systemd/system/
+            sudo systemctl daemon-reload
+            sudo systemctl enable mega-fun
             sudo systemctl restart mega-fun
             grep -v '^#' /opt/mega-fun/deploy/crontab | grep -v '^$' | crontab -
             sudo cp /opt/mega-fun/deploy/mega-fun-datasette.service /etc/systemd/system/
