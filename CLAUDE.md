@@ -1,0 +1,1 @@
+rób commit i push po każdej zmianie w sensownym miejscu z krótkim commit message po polsku

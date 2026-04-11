@@ -319,57 +319,56 @@ def _format_place(place):
 def _fetch_place_details(api_key, place_name, lat, lng):
     """Fetch place details using Google Places API (New).
 
-    Strategy order (most reliable first):
-    1. Nearby Search at exact coordinates (radius 80 m) — pin-point match
-    2. Text Search with tight location bias (300 m)
-    3. Text Search without location (global fallback)
+    Strategy order:
+    1. Text Search + tight location restriction (name + coords) — most precise
+    2. Text Search + location bias 500 m (name + approximate area)
+    3. Text Search without location (name only, global fallback)
     """
     import requests as req
 
     hdrs = _place_api_headers(api_key)
+    text_url = "https://places.googleapis.com/v1/places:searchText"
     last_error = None
 
-    # ── 1. Nearby Search (best when we have exact coords from URL) ──────────
+    # ── 1. Text Search + locationRestriction (hard boundary, 200 m) ─────────
     if lat is not None and lng is not None:
-        nearby_url = "https://places.googleapis.com/v1/places:searchNearby"
-        nearby_body = {
-            "locationRestriction": {
-                "circle": {
-                    "center": {"latitude": lat, "longitude": lng},
-                    "radius": 80.0,
-                }
-            },
-            "maxResultCount": 1,
-        }
-        r = req.post(nearby_url, json=nearby_body, headers=hdrs, timeout=15)
-        d = r.json()
-        if "error" in d:
-            last_error = f"Nearby API: {d['error'].get('code')} {d['error'].get('message','')}"
-        elif d.get("places"):
-            return _format_place(d["places"][0])
-
-    # ── 2. Text Search + tight location bias ────────────────────────────────
-    if lat is not None and lng is not None:
-        text_url = "https://places.googleapis.com/v1/places:searchText"
         body = {
             "textQuery": place_name,
             "pageSize": 1,
-            "locationBias": {
+            "locationRestriction": {
                 "circle": {
                     "center": {"latitude": lat, "longitude": lng},
-                    "radius": 300.0,
+                    "radius": 200.0,
                 }
             },
         }
         r = req.post(text_url, json=body, headers=hdrs, timeout=15)
         d = r.json()
         if "error" in d:
-            last_error = f"Text API: {d['error'].get('code')} {d['error'].get('message','')}"
+            last_error = f"{d['error'].get('code')} {d['error'].get('message','')}"
+        elif d.get("places"):
+            return _format_place(d["places"][0])
+
+    # ── 2. Text Search + locationBias (soft, 500 m) ─────────────────────────
+    if lat is not None and lng is not None:
+        body = {
+            "textQuery": place_name,
+            "pageSize": 1,
+            "locationBias": {
+                "circle": {
+                    "center": {"latitude": lat, "longitude": lng},
+                    "radius": 500.0,
+                }
+            },
+        }
+        r = req.post(text_url, json=body, headers=hdrs, timeout=15)
+        d = r.json()
+        if "error" in d:
+            last_error = f"{d['error'].get('code')} {d['error'].get('message','')}"
         elif d.get("places"):
             return _format_place(d["places"][0])
 
     # ── 3. Text Search — no location ────────────────────────────────────────
-    text_url = "https://places.googleapis.com/v1/places:searchText"
     body = {"textQuery": place_name, "pageSize": 1}
     r = req.post(text_url, json=body, headers=hdrs, timeout=15)
     d = r.json()
@@ -382,7 +381,7 @@ def _fetch_place_details(api_key, place_name, lat, lng):
     coords_hint = f" ({lat}, {lng})" if lat else ""
     raise Exception(
         f"Nie znaleziono miejsca: '{place_name}'{coords_hint}"
-        + (f" — {last_error}" if last_error else "")
+        + (f" — ostatni błąd API: {last_error}" if last_error else "")
     )
 
 
