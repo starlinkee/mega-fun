@@ -5,6 +5,9 @@ import re
 import time
 import json
 import threading
+import io
+import csv
+import urllib.parse as urlparse
 
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session, make_response
 from app.db import get_db
@@ -222,6 +225,182 @@ def api_dashboard_stats():
 @main_bp.route("/google-maps")
 def tab_google_maps():
     return render_template("tabs/google_maps.html", active_tab="google_maps")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Maps URL Scraper — single-place scrape from a Google Maps link → CSV/HubSpot
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _parse_maps_url(url):
+    """Return (place_name, lat, lng) extracted from a Google Maps place URL."""
+    # Name from path  /maps/place/<NAME>/
+    m = re.search(r'/maps/place/([^/@]+)', url)
+    place_name = urlparse.unquote_plus(m.group(1)) if m else ""
+
+    # Precise coords from data parameter  !3d<lat>!4d<lng>
+    lat_m = re.search(r'!3d(-?\d+\.?\d*)', url)
+    lng_m = re.search(r'!4d(-?\d+\.?\d*)', url)
+    if lat_m and lng_m:
+        return place_name, float(lat_m.group(1)), float(lng_m.group(2))
+
+    # Fallback: @lat,lng in path
+    coords_m = re.search(r'@(-?\d+\.?\d*),(-?\d+\.?\d*)', url)
+    if coords_m:
+        return place_name, float(coords_m.group(1)), float(coords_m.group(2))
+
+    return place_name, None, None
+
+
+def _fetch_place_details(api_key, place_name, lat, lng):
+    """Call Google Places API (New) text-search and return a dict of fields."""
+    import requests as req
+
+    api_url = "https://places.googleapis.com/v1/places:searchText"
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": api_key,
+        "X-Goog-FieldMask": (
+            "places.id,places.displayName,places.formattedAddress,"
+            "places.addressComponents,places.types,places.primaryTypeDisplayName,"
+            "places.nationalPhoneNumber,places.internationalPhoneNumber,"
+            "places.websiteUri,places.rating,places.userRatingCount,"
+            "places.businessStatus,places.googleMapsUri,places.editorialSummary"
+        ),
+    }
+    body = {"textQuery": place_name, "pageSize": 1}
+    if lat is not None and lng is not None:
+        body["locationBias"] = {
+            "circle": {
+                "center": {"latitude": lat, "longitude": lng},
+                "radius": 300.0,
+            }
+        }
+
+    resp = req.post(api_url, json=body, headers=headers, timeout=15)
+    data = resp.json()
+
+    if "error" in data:
+        err = data["error"]
+        raise Exception(f"API error {err.get('code')}: {err.get('message', '')}")
+
+    places = data.get("places", [])
+    if not places:
+        raise Exception(f"Nie znaleziono miejsca: {place_name}")
+
+    place = places[0]
+
+    city = postal_code = country = street = ""
+    for comp in place.get("addressComponents", []):
+        types = comp.get("types", [])
+        ltext = comp.get("longText", "")
+        if "locality" in types:
+            city = ltext
+        elif "postal_code" in types:
+            postal_code = ltext
+        elif "country" in types:
+            country = ltext
+        elif "route" in types:
+            street = ltext
+
+    return {
+        "name": place.get("displayName", {}).get("text", ""),
+        "address": place.get("formattedAddress", ""),
+        "street": street,
+        "city": city,
+        "postal_code": postal_code,
+        "country": country,
+        "phone": place.get("nationalPhoneNumber", ""),
+        "phone_international": place.get("internationalPhoneNumber", ""),
+        "website": place.get("websiteUri", ""),
+        "category": place.get("primaryTypeDisplayName", {}).get("text", ""),
+        "category_google": ", ".join(place.get("types", [])[:5]),
+        "rating": str(place.get("rating", "")),
+        "rating_count": str(place.get("userRatingCount", "")),
+        "business_status": place.get("businessStatus", ""),
+        "maps_url": place.get("googleMapsUri", ""),
+        "place_id": place.get("id", ""),
+        "description": place.get("editorialSummary", {}).get("text", ""),
+    }
+
+
+@main_bp.route("/maps-url-scraper")
+def tab_maps_url_scraper():
+    return render_template("tabs/maps_url_scraper.html", active_tab="maps_url_scraper")
+
+
+@main_bp.route("/api/maps-url-scrape", methods=["POST"])
+def api_maps_url_scrape():
+    """Scrape place details from one or more Google Maps URLs."""
+    urls_raw = request.form.get("urls", "").strip()
+    if not urls_raw:
+        return jsonify({"error": "Brak URL"}), 400
+
+    db = get_db()
+    row = db.execute("SELECT value FROM settings WHERE key = 'api_key'").fetchone()
+    db.close()
+    if not row or not row["value"]:
+        return jsonify({"error": "Brak klucza API Google. Ustaw go w Ustawieniach."}), 400
+
+    api_key = decrypt(row["value"])
+    urls = [u.strip() for u in urls_raw.splitlines() if u.strip()]
+
+    results = []
+    for url in urls:
+        try:
+            place_name, lat, lng = _parse_maps_url(url)
+            if not place_name:
+                raise ValueError("Nie można wyodrębnić nazwy miejsca z URL")
+            data = _fetch_place_details(api_key, place_name, lat, lng)
+            data["source_url"] = url
+            results.append(data)
+        except Exception as e:
+            results.append({"error": str(e), "source_url": url})
+
+    return jsonify({"results": results})
+
+
+@main_bp.route("/api/maps-url-scrape/csv", methods=["POST"])
+def api_maps_url_scrape_csv():
+    """Return scraped places as a HubSpot-compatible CSV file."""
+    data = request.get_json(force=True)
+    results = data.get("results", [])
+
+    fieldnames = [
+        "Company name", "Website URL", "Phone number",
+        "City", "Country/Region", "Zip Code", "Address",
+        "Industry", "Description",
+        "Google Maps URL", "Google Rating", "Google Rating Count",
+        "Google Place ID",
+    ]
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+    writer.writeheader()
+
+    for r in results:
+        if "error" in r:
+            continue
+        writer.writerow({
+            "Company name": r.get("name", ""),
+            "Website URL": r.get("website", ""),
+            "Phone number": r.get("phone_international") or r.get("phone", ""),
+            "City": r.get("city", ""),
+            "Country/Region": r.get("country", ""),
+            "Zip Code": r.get("postal_code", ""),
+            "Address": r.get("address", ""),
+            "Industry": r.get("category", ""),
+            "Description": r.get("description", ""),
+            "Google Maps URL": r.get("maps_url", ""),
+            "Google Rating": r.get("rating", ""),
+            "Google Rating Count": r.get("rating_count", ""),
+            "Google Place ID": r.get("place_id", ""),
+        })
+
+    csv_bytes = output.getvalue().encode("utf-8-sig")  # BOM for Excel
+    response = make_response(csv_bytes)
+    response.headers["Content-Type"] = "text/csv; charset=utf-8-sig"
+    response.headers["Content-Disposition"] = 'attachment; filename="hubspot_import.csv"'
+    return response
 
 
 @main_bp.route("/api/businesses")

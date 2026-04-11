@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block content %}
+<h4>Import z Google Maps URL → HubSpot CSV</h4>
+
+<div class="row mb-3">
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header">Linki Google Maps</div>
+            <div class="card-body">
+                <form id="urlForm">
+                    <div class="mb-2">
+                        <label class="form-label">Wklej linki (jeden na linię)</label>
+                        <textarea id="urlsInput" class="form-control font-monospace"
+                                  rows="10" required
+                                  placeholder="https://www.google.com/maps/place/...&#10;https://www.google.com/maps/place/..."></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100" id="scrapeBtn">
+                        Scrapuj
+                    </button>
+                </form>
+                <div id="scrapeStatus" class="mt-2" style="display:none;">
+                    <div class="d-flex align-items-center gap-2 text-info">
+                        <div class="spinner-border spinner-border-sm" role="status"></div>
+                        <span>Pobieranie danych...</span>
+                    </div>
+                </div>
+                <div id="scrapeError" class="mt-2" style="display:none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Wyniki <span id="resultsCount" class="text-muted"></span></span>
+                <button class="btn btn-success btn-sm" id="downloadBtn" style="display:none;" onclick="downloadCsv()">
+                    Pobierz CSV (HubSpot)
+                </button>
+            </div>
+            <div class="card-body p-0" id="resultsWrap">
+                <div class="text-center text-muted p-4" id="resultsPlaceholder">
+                    Wyniki pojawią się tutaj po scrape'owaniu.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Preview table (below cards, full width) -->
+<div id="previewSection" style="display:none;">
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>Podgląd danych</span>
+            <button class="btn btn-success btn-sm" onclick="downloadCsv()">Pobierz CSV (HubSpot)</button>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-striped table-hover mb-0" id="previewTable">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Nazwa</th>
+                            <th>Adres</th>
+                            <th>Telefon</th>
+                            <th>Strona</th>
+                            <th>Kategoria</th>
+                            <th>Ocena</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="previewBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _results = [];
+
+document.getElementById('urlForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const urls = document.getElementById('urlsInput').value.trim();
+    if (!urls) return;
+
+    const btn = document.getElementById('scrapeBtn');
+    btn.disabled = true;
+    document.getElementById('scrapeStatus').style.display = 'block';
+    document.getElementById('scrapeError').style.display = 'none';
+    document.getElementById('downloadBtn').style.display = 'none';
+    document.getElementById('previewSection').style.display = 'none';
+    document.getElementById('resultsPlaceholder').style.display = 'block';
+    document.getElementById('resultsCount').textContent = '';
+
+    const fd = new FormData();
+    fd.set('urls', urls);
+
+    fetch('/api/maps-url-scrape', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('scrapeStatus').style.display = 'none';
+            btn.disabled = false;
+
+            if (data.error) {
+                showError(data.error);
+                return;
+            }
+
+            _results = data.results || [];
+            renderResults(_results);
+        })
+        .catch(err => {
+            document.getElementById('scrapeStatus').style.display = 'none';
+            btn.disabled = false;
+            showError('Błąd: ' + err.message);
+        });
+});
+
+function showError(msg) {
+    const el = document.getElementById('scrapeError');
+    el.innerHTML = `<div class="alert alert-danger py-1">${esc(msg)}</div>`;
+    el.style.display = 'block';
+}
+
+function renderResults(results) {
+    const ok = results.filter(r => !r.error);
+    const bad = results.filter(r => r.error);
+
+    document.getElementById('resultsCount').textContent =
+        `(${ok.length} OK${bad.length ? ', ' + bad.length + ' błędów' : ''})`;
+
+    // Summary cards in resultsWrap
+    const wrap = document.getElementById('resultsWrap');
+    document.getElementById('resultsPlaceholder').style.display = 'none';
+
+    let html = '<ul class="list-group list-group-flush">';
+    results.forEach((r, i) => {
+        if (r.error) {
+            html += `<li class="list-group-item list-group-item-danger py-2">
+                <small class="text-danger"><strong>#${i+1} Błąd:</strong> ${esc(r.error)}</small><br>
+                <small class="text-muted text-truncate d-block" style="max-width:100%">${esc(r.source_url||'')}</small>
+            </li>`;
+        } else {
+            html += `<li class="list-group-item py-2">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <strong>${esc(r.name)}</strong>
+                        ${r.rating ? `<span class="ms-2 badge bg-warning text-dark">★ ${esc(r.rating)}</span>` : ''}
+                        ${r.business_status === 'OPERATIONAL' ? '<span class="ms-1 badge bg-success">Aktywny</span>' : ''}
+                    </div>
+                    <small class="text-muted">#${i+1}</small>
+                </div>
+                <small class="text-muted">${esc(r.city || '')}${r.city && r.country ? ', ' : ''}${esc(r.country || '')}</small>
+                ${r.website ? `<br><small><a href="${esc(r.website)}" target="_blank">${esc(r.website)}</a></small>` : ''}
+                ${r.phone ? `<br><small>${esc(r.phone)}</small>` : ''}
+            </li>`;
+        }
+    });
+    html += '</ul>';
+    wrap.innerHTML = html;
+
+    if (ok.length > 0) {
+        document.getElementById('downloadBtn').style.display = 'inline-block';
+        renderPreviewTable(ok);
+        document.getElementById('previewSection').style.display = 'block';
+    }
+}
+
+function renderPreviewTable(results) {
+    const tbody = document.getElementById('previewBody');
+    tbody.innerHTML = results.map((r, i) => `<tr>
+        <td>${i+1}</td>
+        <td>${esc(r.name)}</td>
+        <td><small>${esc(r.address)}</small></td>
+        <td><small>${esc(r.phone||'')}</small></td>
+        <td><small>${r.website ? `<a href="${esc(r.website)}" target="_blank">${esc(r.website)}</a>` : ''}</small></td>
+        <td><small>${esc(r.category||'')}</small></td>
+        <td>${r.rating ? `★ ${esc(r.rating)} <small class="text-muted">(${esc(r.rating_count||'')})</small>` : ''}</td>
+        <td>${r.business_status === 'OPERATIONAL' ? '<span class="badge bg-success">OK</span>' : esc(r.business_status||'')}</td>
+    </tr>`).join('');
+}
+
+function downloadCsv() {
+    const ok = _results.filter(r => !r.error);
+    if (!ok.length) return;
+
+    fetch('/api/maps-url-scrape/csv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ results: ok }),
+    })
+    .then(r => r.blob())
+    .then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'hubspot_import.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+    });
+}
+
+function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = String(s || '');
+    return d.innerHTML;
+}
+</script>
+{% endblock %}
