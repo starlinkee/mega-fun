@@ -231,17 +231,31 @@ def tab_google_maps():
 # Maps URL Scraper — single-place scrape from a Google Maps link → CSV/HubSpot
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _expand_url(url):
+    """Follow redirects and return the final URL (handles maps.app.goo.gl short links)."""
+    import requests as req
+    if 'maps.app.goo.gl' in url or 'goo.gl' in url:
+        try:
+            r = req.get(url, allow_redirects=True, timeout=10,
+                        headers={"User-Agent": "Mozilla/5.0"})
+            return r.url
+        except Exception:
+            pass
+    return url
+
+
 def _parse_maps_url(url):
     """Return (place_name, lat, lng) extracted from a Google Maps place URL."""
     # Name from path  /maps/place/<NAME>/
     m = re.search(r'/maps/place/([^/@]+)', url)
     place_name = urlparse.unquote_plus(m.group(1)) if m else ""
 
-    # Precise coords from data parameter  !3d<lat>!4d<lng>
-    lat_m = re.search(r'!3d(-?\d+\.?\d*)', url)
-    lng_m = re.search(r'!4d(-?\d+\.?\d*)', url)
-    if lat_m and lng_m:
-        return place_name, float(lat_m.group(1)), float(lng_m.group(2))
+    # Precise coords from data parameter — take the LAST pair of !3d / !4d
+    # (URLs with multiple places embed several pairs; the target place is last)
+    lat_all = re.findall(r'!3d(-?\d+\.?\d*)', url)
+    lng_all = re.findall(r'!4d(-?\d+\.?\d*)', url)
+    if lat_all and lng_all:
+        return place_name, float(lat_all[-1]), float(lng_all[-1])
 
     # Fallback: @lat,lng in path
     coords_m = re.search(r'@(-?\d+\.?\d*),(-?\d+\.?\d*)', url)
@@ -347,6 +361,7 @@ def api_maps_url_scrape():
     results = []
     for url in urls:
         try:
+            url = _expand_url(url)
             place_name, lat, lng = _parse_maps_url(url)
             if not place_name:
                 raise ValueError("Nie można wyodrębnić nazwy miejsca z URL")
