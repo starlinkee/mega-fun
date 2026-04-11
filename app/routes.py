@@ -265,44 +265,24 @@ def _parse_maps_url(url):
     return place_name, None, None
 
 
-def _fetch_place_details(api_key, place_name, lat, lng):
-    """Call Google Places API (New) text-search and return a dict of fields."""
-    import requests as req
+_PLACE_FIELD_MASK = (
+    "places.id,places.displayName,places.formattedAddress,"
+    "places.addressComponents,places.types,places.primaryTypeDisplayName,"
+    "places.nationalPhoneNumber,places.internationalPhoneNumber,"
+    "places.websiteUri,places.rating,places.userRatingCount,"
+    "places.businessStatus,places.googleMapsUri,places.editorialSummary"
+)
 
-    api_url = "https://places.googleapis.com/v1/places:searchText"
-    headers = {
+
+def _place_api_headers(api_key):
+    return {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": api_key,
-        "X-Goog-FieldMask": (
-            "places.id,places.displayName,places.formattedAddress,"
-            "places.addressComponents,places.types,places.primaryTypeDisplayName,"
-            "places.nationalPhoneNumber,places.internationalPhoneNumber,"
-            "places.websiteUri,places.rating,places.userRatingCount,"
-            "places.businessStatus,places.googleMapsUri,places.editorialSummary"
-        ),
+        "X-Goog-FieldMask": _PLACE_FIELD_MASK,
     }
-    body = {"textQuery": place_name, "pageSize": 1}
-    if lat is not None and lng is not None:
-        body["locationBias"] = {
-            "circle": {
-                "center": {"latitude": lat, "longitude": lng},
-                "radius": 300.0,
-            }
-        }
 
-    resp = req.post(api_url, json=body, headers=headers, timeout=15)
-    data = resp.json()
 
-    if "error" in data:
-        err = data["error"]
-        raise Exception(f"API error {err.get('code')}: {err.get('message', '')}")
-
-    places = data.get("places", [])
-    if not places:
-        raise Exception(f"Nie znaleziono miejsca: {place_name}")
-
-    place = places[0]
-
+def _format_place(place):
     city = postal_code = country = street = ""
     for comp in place.get("addressComponents", []):
         types = comp.get("types", [])
@@ -315,7 +295,6 @@ def _fetch_place_details(api_key, place_name, lat, lng):
             country = ltext
         elif "route" in types:
             street = ltext
-
     return {
         "name": place.get("displayName", {}).get("text", ""),
         "address": place.get("formattedAddress", ""),
@@ -335,6 +314,76 @@ def _fetch_place_details(api_key, place_name, lat, lng):
         "place_id": place.get("id", ""),
         "description": place.get("editorialSummary", {}).get("text", ""),
     }
+
+
+def _fetch_place_details(api_key, place_name, lat, lng):
+    """Fetch place details using Google Places API (New).
+
+    Strategy order (most reliable first):
+    1. Nearby Search at exact coordinates (radius 80 m) — pin-point match
+    2. Text Search with tight location bias (300 m)
+    3. Text Search without location (global fallback)
+    """
+    import requests as req
+
+    hdrs = _place_api_headers(api_key)
+    last_error = None
+
+    # ── 1. Nearby Search (best when we have exact coords from URL) ──────────
+    if lat is not None and lng is not None:
+        nearby_url = "https://places.googleapis.com/v1/places:searchNearby"
+        nearby_body = {
+            "locationRestriction": {
+                "circle": {
+                    "center": {"latitude": lat, "longitude": lng},
+                    "radius": 80.0,
+                }
+            },
+            "maxResultCount": 1,
+        }
+        r = req.post(nearby_url, json=nearby_body, headers=hdrs, timeout=15)
+        d = r.json()
+        if "error" in d:
+            last_error = f"Nearby API: {d['error'].get('code')} {d['error'].get('message','')}"
+        elif d.get("places"):
+            return _format_place(d["places"][0])
+
+    # ── 2. Text Search + tight location bias ────────────────────────────────
+    if lat is not None and lng is not None:
+        text_url = "https://places.googleapis.com/v1/places:searchText"
+        body = {
+            "textQuery": place_name,
+            "pageSize": 1,
+            "locationBias": {
+                "circle": {
+                    "center": {"latitude": lat, "longitude": lng},
+                    "radius": 300.0,
+                }
+            },
+        }
+        r = req.post(text_url, json=body, headers=hdrs, timeout=15)
+        d = r.json()
+        if "error" in d:
+            last_error = f"Text API: {d['error'].get('code')} {d['error'].get('message','')}"
+        elif d.get("places"):
+            return _format_place(d["places"][0])
+
+    # ── 3. Text Search — no location ────────────────────────────────────────
+    text_url = "https://places.googleapis.com/v1/places:searchText"
+    body = {"textQuery": place_name, "pageSize": 1}
+    r = req.post(text_url, json=body, headers=hdrs, timeout=15)
+    d = r.json()
+    if "error" in d:
+        err = d["error"]
+        raise Exception(f"API error {err.get('code')}: {err.get('message', '')}")
+    if d.get("places"):
+        return _format_place(d["places"][0])
+
+    coords_hint = f" ({lat}, {lng})" if lat else ""
+    raise Exception(
+        f"Nie znaleziono miejsca: '{place_name}'{coords_hint}"
+        + (f" — {last_error}" if last_error else "")
+    )
 
 
 @main_bp.route("/maps-url-scraper")
