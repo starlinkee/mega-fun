@@ -262,6 +262,8 @@ function renderAreas() {
         rect.addListener('click', function(e) {
             info.setPosition(e.latLng);
             info.open(map);
+            document.getElementById('coordsSW').value = `${area.sw_lat.toFixed(4)}, ${area.sw_lng.toFixed(4)}`;
+            document.getElementById('coordsNE').value = `${area.ne_lat.toFixed(4)}, ${area.ne_lng.toFixed(4)}`;
         });
 
         scrapeRectangles.push(rect);
@@ -396,6 +398,8 @@ function focusTaskOnMap(sourceQuery, rowEl) {
         rect.addListener('click', function(e) {
             info.setPosition(e.latLng);
             info.open(map);
+            document.getElementById('coordsSW').value = `${area.sw_lat.toFixed(4)}, ${area.sw_lng.toFixed(4)}`;
+            document.getElementById('coordsNE').value = `${area.ne_lat.toFixed(4)}, ${area.ne_lng.toFixed(4)}`;
         });
 
         scrapeRectangles.push(rect);
