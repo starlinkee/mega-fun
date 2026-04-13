@@ -133,7 +133,7 @@ function renderTable(businesses) {
     tbody.innerHTML = sorted.map(b => `
         <tr>
             <td>${b.id}</td>
-            <td>${esc(b.name)}</td>
+            <td>${b.place_id ? `<a href="https://www.google.com/maps/place/?q=place_id:${b.place_id}" target="_blank" rel="noopener">${esc(b.name)}</a>` : esc(b.name)}</td>
             <td>${esc(b.address)}</td>
             <td>${esc(b.city || '')}</td>
             <td>${esc(b.country || '')}</td>
