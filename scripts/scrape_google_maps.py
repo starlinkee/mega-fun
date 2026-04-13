@@ -128,7 +128,7 @@ def search_places(api_key, query, coords_sw=None, coords_ne=None):
     return results
 
 
-def save_business(db, biz, query):
+def save_business(db, biz, query, workspace_id=1):
     """Insert business, skip if place_id already exists."""
     place_id = biz.get("place_id", "")
     if place_id:
@@ -144,8 +144,8 @@ def save_business(db, biz, query):
     if existing:
         return False
     db.execute(
-        "INSERT INTO businesses (name, address, city, country, phone, website, category, category_google, source_query, place_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (biz["name"], biz["address"], biz.get("city", ""), biz.get("country", ""), biz.get("phone", ""), biz.get("website", ""), query, biz.get("category_google", ""), query, place_id),
+        "INSERT INTO businesses (name, address, city, country, phone, website, category, category_google, source_query, place_id, workspace_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (biz["name"], biz["address"], biz.get("city", ""), biz.get("country", ""), biz.get("phone", ""), biz.get("website", ""), query, biz.get("category_google", ""), query, place_id, workspace_id),
     )
     return True
 
@@ -161,7 +161,7 @@ def update_op_details(op_id, details):
     db.close()
 
 
-def scrape_recursive(api_key, query, sw, ne, db, op_id, depth=0, stats=None):
+def scrape_recursive(api_key, query, sw, ne, db, op_id, depth=0, stats=None, workspace_id=1):
     """Scrape an area; if 60 results returned, subdivide into 4 quadrants and recurse."""
     if stats is None:
         stats = {"found": 0, "saved": 0, "areas": 0, "subdivisions": 0, "depth_saturated": 0}
@@ -188,20 +188,20 @@ def scrape_recursive(api_key, query, sw, ne, db, op_id, depth=0, stats=None):
         print(json.dumps({"status": "subdividing", "depth": depth, "query": query}), flush=True)
 
         for q_sw, q_ne in quadrants:
-            scrape_recursive(api_key, query, q_sw, q_ne, db, op_id, depth + 1, stats)
+            scrape_recursive(api_key, query, q_sw, q_ne, db, op_id, depth + 1, stats, workspace_id)
     else:
         # Area is small enough (or hit depth limit) — save results
         if len(places) == 60 and depth >= MAX_SUBDIVISION_DEPTH:
             stats["depth_saturated"] += 1
         for place in places:
-            if save_business(db, place, query):
+            if save_business(db, place, query, workspace_id):
                 stats["saved"] += 1
         stats["found"] += len(places)
         stats["areas"] += 1
 
         db.execute(
-            "INSERT INTO scrape_areas (source_query, sw_lat, sw_lng, ne_lat, ne_lng, results_count) VALUES (?, ?, ?, ?, ?, ?)",
-            (query, sw[0], sw[1], ne[0], ne[1], len(places)),
+            "INSERT INTO scrape_areas (source_query, sw_lat, sw_lng, ne_lat, ne_lng, results_count, workspace_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (query, sw[0], sw[1], ne[0], ne[1], len(places), workspace_id),
         )
         db.commit()
 
@@ -228,6 +228,7 @@ def main():
         print(json.dumps({"error": msg}))
         sys.exit(1)
 
+    workspace_id = int(os.environ.get("WORKSPACE_ID", "1"))
     op_id = args.op_id or log_operation("running", f"Query: {args.query}")
 
     try:
@@ -238,7 +239,7 @@ def main():
             sw = [float(x.strip()) for x in args.coords_sw.split(",")]
             ne = [float(x.strip()) for x in args.coords_ne.split(",")]
             db = get_db()
-            stats = scrape_recursive(api_key, args.query, sw, ne, db, op_id)
+            stats = scrape_recursive(api_key, args.query, sw, ne, db, op_id, workspace_id=workspace_id)
             db.close()
 
             warning = (
@@ -257,7 +258,7 @@ def main():
             db = get_db()
             saved = 0
             for i, place in enumerate(places):
-                if save_business(db, place, args.query):
+                if save_business(db, place, args.query, workspace_id):
                     saved += 1
                 print(json.dumps({"status": "progress", "current": i + 1, "total": len(places)}), flush=True)
             db.commit()

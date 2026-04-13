@@ -425,6 +425,7 @@ def main():
                         default=int(_env_max_pages) if _env_max_pages else DEFAULT_MAX_PAGES)
     args = parser.parse_args()
 
+    workspace_id = int(os.environ.get("WORKSPACE_ID", "1"))
     op_id = args.op_id or log_operation("running", "Rozpoczynanie scrapowania emaili...")
 
     try:
@@ -432,12 +433,13 @@ def main():
 
         # Build query for businesses with websites (skip those with emails or already scraped)
         conditions = [
+            "workspace_id = ?",
             "website IS NOT NULL",
             "website != ''",
             "id NOT IN (SELECT DISTINCT business_id FROM emails WHERE business_id IS NOT NULL)",
             "(email_scraped_at IS NULL OR COALESCE(email_scraped_website, '') != COALESCE(website, ''))",
         ]
-        params = []
+        params = [workspace_id]
 
         if args.business_ids:
             ids = [int(x.strip()) for x in args.business_ids.split(',') if x.strip()]

@@ -8,6 +8,17 @@ def init_db():
     c = conn.cursor()
 
     c.execute("""
+        CREATE TABLE IF NOT EXISTS workspaces (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # Insert default workspace (Starlinkee) if not exists
+    c.execute("INSERT OR IGNORE INTO workspaces (id, name) VALUES (1, 'Starlinkee')")
+
+    c.execute("""
         CREATE TABLE IF NOT EXISTS businesses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT,
@@ -116,11 +127,21 @@ def init_db():
         ("place_id", "businesses"),
         ("target_city", "campaigns"), ("target_country", "campaigns"),
         ("target_category", "campaigns"),
+        ("workspace_id", "businesses"),
+        ("workspace_id", "campaigns"),
+        ("workspace_id", "mailboxes"),
+        ("workspace_id", "scrape_areas"),
     ]:
         try:
             c.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
         except sqlite3.OperationalError:
             pass  # column already exists
+
+    # Assign all existing data to workspace 1 (Starlinkee)
+    c.execute("UPDATE businesses SET workspace_id = 1 WHERE workspace_id IS NULL")
+    c.execute("UPDATE campaigns SET workspace_id = 1 WHERE workspace_id IS NULL")
+    c.execute("UPDATE mailboxes SET workspace_id = 1 WHERE workspace_id IS NULL")
+    c.execute("UPDATE scrape_areas SET workspace_id = 1 WHERE workspace_id IS NULL")
 
     try:
         c.execute("ALTER TABLE mailboxes ADD COLUMN total_sent INTEGER DEFAULT 0")
