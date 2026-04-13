@@ -15,6 +15,11 @@
     <div class="card-header">
         <div class="row g-2 align-items-center">
             <div class="col-auto"><span id="bizCount">Wyszukane biznesy (0)</span></div>
+            <div class="col-auto ms-auto">
+                <button class="btn btn-sm btn-outline-success" onclick="exportCsv()">
+                    Eksport HubSpot CSV
+                </button>
+            </div>
             <div class="col-md-3">
                 <input type="text" id="searchInput" class="form-control form-control-sm"
                        placeholder="Szukaj (nazwa, adres, telefon...)">
@@ -266,6 +271,28 @@ function esc(s) {
     const d = document.createElement('div');
     d.textContent = s;
     return d.innerHTML;
+}
+
+function exportCsv() {
+    const checkedBoxes = document.querySelectorAll('.biz-check:checked');
+    const params = new URLSearchParams();
+
+    if (checkedBoxes.length > 0) {
+        params.set('ids', [...checkedBoxes].map(cb => cb.dataset.id).join(','));
+    } else {
+        const search     = document.getElementById('searchInput').value;
+        const cat        = tsCategory.getValue();
+        const country    = tsCountry.getValue();
+        const city       = tsCity.getValue();
+        const hasWebsite = document.getElementById('websiteFilter').value;
+        if (search)          params.set('search',      search);
+        if (cat)             params.set('category',    cat);
+        if (country)         params.set('country',     country);
+        if (city)            params.set('city',        city);
+        if (hasWebsite !== '') params.set('has_website', hasWebsite);
+    }
+
+    window.location.href = '/api/businesses/export?' + params;
 }
 
 document.getElementById('searchInput').addEventListener('input', () => {

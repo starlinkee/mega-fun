@@ -524,6 +524,81 @@ def api_maps_url_scrape_csv():
     return response
 
 
+@main_bp.route("/api/businesses/export")
+def api_businesses_export():
+    """Export filtered businesses as HubSpot-compatible CSV."""
+    db = get_db()
+    ws = get_workspace_id()
+
+    search = request.args.get("search", "").strip()
+    category = request.args.get("category", "").strip()
+    country = request.args.get("country", "").strip()
+    city = request.args.get("city", "").strip()
+    has_website = request.args.get("has_website", "").strip()
+    ids_param = request.args.get("ids", "").strip()
+
+    conditions = ["workspace_id = ?", "COALESCE(not_interesting, 0) = 0"]
+    params = [ws]
+
+    if ids_param:
+        id_list = [int(x) for x in ids_param.split(",") if x.strip().isdigit()]
+        if id_list:
+            conditions.append(f"id IN ({','.join('?' * len(id_list))})")
+            params.extend(id_list)
+    else:
+        if has_website == "1":
+            conditions.append("(website IS NOT NULL AND website != '')")
+        elif has_website == "0":
+            conditions.append("(website IS NULL OR website = '')")
+        if search:
+            conditions.append("(name LIKE ? OR address LIKE ? OR phone LIKE ? OR website LIKE ?)")
+            like = f"%{search}%"
+            params.extend([like, like, like, like])
+        if category:
+            conditions.append("category = ?")
+            params.append(category)
+        if country:
+            conditions.append("country = ?")
+            params.append(country)
+        if city:
+            conditions.append("city = ?")
+            params.append(city)
+
+    where = "WHERE " + " AND ".join(conditions)
+    rows = db.execute(
+        f"SELECT * FROM businesses {where} ORDER BY created_at DESC",
+        params,
+    ).fetchall()
+    db.close()
+
+    fieldnames = [
+        "Company name", "Website URL", "Phone number",
+        "City", "Country/Region", "Address",
+        "Industry", "Google Place ID",
+    ]
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+    writer.writeheader()
+    for r in rows:
+        writer.writerow({
+            "Company name": r["name"] or "",
+            "Website URL": r["website"] or "",
+            "Phone number": r["phone"] or "",
+            "City": r["city"] or "",
+            "Country/Region": r["country"] or "",
+            "Address": r["address"] or "",
+            "Industry": r["category_google"] or r["category"] or "",
+            "Google Place ID": r["place_id"] or "",
+        })
+
+    csv_bytes = output.getvalue().encode("utf-8-sig")
+    response = make_response(csv_bytes)
+    response.headers["Content-Type"] = "text/csv; charset=utf-8-sig"
+    response.headers["Content-Disposition"] = 'attachment; filename="hubspot_companies.csv"'
+    return response
+
+
 @main_bp.route("/api/businesses")
 def api_businesses():
     """AJAX endpoint: list businesses with pagination, filtering, search."""
