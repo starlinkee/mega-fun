@@ -541,6 +541,15 @@ def api_businesses():
     no_email = request.args.get("no_email", "").strip()
     not_scraped = request.args.get("not_scraped", "").strip()
 
+    ALLOWED_SORT_COLS = {"id", "name", "address", "city", "country", "phone", "category", "category_google", "source_query", "created_at"}
+    sort_col = request.args.get("sort_col", "created_at").strip()
+    sort_dir = request.args.get("sort_dir", "desc").strip().lower()
+    if sort_col not in ALLOWED_SORT_COLS:
+        sort_col = "created_at"
+    if sort_dir not in ("asc", "desc"):
+        sort_dir = "desc"
+    order_by = f"{sort_col} {sort_dir.upper()}"
+
     per_page = min(per_page, 200)
     offset = (page - 1) * per_page
 
@@ -579,7 +588,7 @@ def api_businesses():
     total = db.execute(f"SELECT COUNT(*) FROM businesses {where}", params).fetchone()[0]
 
     rows = db.execute(
-        f"SELECT * FROM businesses {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        f"SELECT * FROM businesses {where} ORDER BY {order_by} LIMIT ? OFFSET ?",
         params + [per_page, offset],
     ).fetchall()
 

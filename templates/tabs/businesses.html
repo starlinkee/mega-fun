@@ -72,7 +72,7 @@
 const PER_PAGE = 50;
 let currentPage = 1;
 let debounceTimer = null;
-let currentSort = {col: null, asc: true};
+let currentSort = {col: 'created_at', asc: false};
 
 const tsOpts = { allowEmptyOption: true, maxOptions: 5000 };
 const tsCategory = new TomSelect('#categoryFilter', tsOpts);
@@ -89,7 +89,12 @@ function loadBusinesses(page) {
     const country     = tsCountry.getValue();
     const city        = tsCity.getValue();
     const hasWebsite  = document.getElementById('websiteFilter').value;
-    const params = new URLSearchParams({page: currentPage, per_page: PER_PAGE});
+    const params = new URLSearchParams({
+        page: currentPage,
+        per_page: PER_PAGE,
+        sort_col: currentSort.col,
+        sort_dir: currentSort.asc ? 'asc' : 'desc',
+    });
     if (search)      params.set('search',      search);
     if (cat)         params.set('category',    cat);
     if (country)     params.set('country',     country);
@@ -109,28 +114,15 @@ function loadBusinesses(page) {
         });
 }
 
-let lastBusinesses = [];
-
 function renderTable(businesses) {
-    lastBusinesses = businesses;
     const tbody = document.getElementById('bizTableBody');
     if (!businesses.length) {
         tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">Brak danych</td></tr>';
+        updateSortIndicators();
         return;
     }
 
-    let sorted = [...businesses];
-    if (currentSort.col) {
-        sorted.sort((a, b) => {
-            const va = (a[currentSort.col] || '').toString().toLowerCase();
-            const vb = (b[currentSort.col] || '').toString().toLowerCase();
-            if (va < vb) return currentSort.asc ? -1 : 1;
-            if (va > vb) return currentSort.asc ? 1 : -1;
-            return 0;
-        });
-    }
-
-    tbody.innerHTML = sorted.map(b => `
+    tbody.innerHTML = businesses.map(b => `
         <tr>
             <td>${b.id}</td>
             <td>${b.place_id ? `<a href="https://www.google.com/maps/place/?q=place_id:${b.place_id}" target="_blank" rel="noopener">${esc(b.name)}</a>` : esc(b.name)}</td>
@@ -168,7 +160,7 @@ document.querySelectorAll('th.sortable').forEach(th => {
             currentSort.col = col;
             currentSort.asc = true;
         }
-        renderTable(lastBusinesses);
+        loadBusinesses(1);
     });
 });
 
