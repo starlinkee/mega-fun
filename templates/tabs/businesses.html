@@ -3,9 +3,9 @@
 <h4>Biznesy</h4>
 
 <!-- Pasek akcji (widoczny gdy coś zaznaczone) -->
-<div id="actionBar" class="alert alert-secondary py-2 px-3 mb-2 d-flex align-items-center gap-3" style="display:none!important">
-    <span id="selectedCount" class="fw-bold"></span>
-    <button class="btn btn-sm btn-warning" onclick="bulkAction('not_interesting')">
+<div id="actionBar" class="d-none d-flex align-items-center gap-2 mb-2">
+    <span id="selectedCount" class="text-muted small"></span>
+    <button class="btn btn-sm btn-outline-secondary" onclick="bulkAction('not_interesting')">
         Nie interesuje (ukryj)
     </button>
     <button class="btn btn-sm btn-outline-secondary" onclick="clearSelection()">Odznacz wszystko</button>
@@ -85,7 +85,6 @@ const PER_PAGE = 500;
 let currentPage = 1;
 let debounceTimer = null;
 let currentSort = {col: 'created_at', asc: false};
-let selectedIds = new Set();
 
 const tsOpts = { allowEmptyOption: true, maxOptions: 5000 };
 const tsCategory = new TomSelect('#categoryFilter', tsOpts);
@@ -137,9 +136,8 @@ function renderTable(businesses) {
     }
 
     tbody.innerHTML = businesses.map(b => {
-        const checked = selectedIds.has(b.id) ? 'checked' : '';
         return `<tr>
-            <td><input type="checkbox" class="biz-check" data-id="${b.id}" ${checked} onchange="onCheck(this)"></td>
+            <td><input type="checkbox" class="biz-check" data-id="${b.id}" onchange="onCheck()"></td>
             <td>${b.id}</td>
             <td>${b.place_id ? `<a href="https://www.google.com/maps/place/?q=place_id:${b.place_id}" target="_blank" rel="noopener">${esc(b.name)}</a>` : esc(b.name)}</td>
             <td>${esc(b.address)}</td>
@@ -155,60 +153,42 @@ function renderTable(businesses) {
     }).join('');
 
     updateSortIndicators();
-    updateCheckAll();
-    updateActionBar();
+    onCheck();
 }
 
 // ---- Checkboxy ----
 
-function onCheck(el) {
-    const id = parseInt(el.dataset.id);
-    if (el.checked) selectedIds.add(id);
-    else selectedIds.delete(id);
-    updateCheckAll();
-    updateActionBar();
-}
-
-document.getElementById('checkAll').addEventListener('change', function() {
-    document.querySelectorAll('.biz-check').forEach(cb => {
-        const id = parseInt(cb.dataset.id);
-        cb.checked = this.checked;
-        if (this.checked) selectedIds.add(id);
-        else selectedIds.delete(id);
-    });
-    updateActionBar();
-});
-
-function updateCheckAll() {
+function onCheck() {
     const boxes = document.querySelectorAll('.biz-check');
     const checked = document.querySelectorAll('.biz-check:checked');
     const allBox = document.getElementById('checkAll');
     allBox.checked = boxes.length > 0 && checked.length === boxes.length;
     allBox.indeterminate = checked.length > 0 && checked.length < boxes.length;
-}
 
-function updateActionBar() {
     const bar = document.getElementById('actionBar');
-    const cnt = document.getElementById('selectedCount');
-    if (selectedIds.size > 0) {
-        cnt.textContent = `Zaznaczono: ${selectedIds.size}`;
-        bar.style.removeProperty('display');
+    if (checked.length > 0) {
+        document.getElementById('selectedCount').textContent = `Zaznaczono: ${checked.length}`;
+        bar.classList.remove('d-none');
     } else {
-        bar.style.display = 'none';
+        bar.classList.add('d-none');
     }
 }
 
+document.getElementById('checkAll').addEventListener('change', function() {
+    document.querySelectorAll('.biz-check').forEach(cb => cb.checked = this.checked);
+    onCheck();
+});
+
 function clearSelection() {
-    selectedIds.clear();
     document.querySelectorAll('.biz-check').forEach(cb => cb.checked = false);
     document.getElementById('checkAll').checked = false;
     document.getElementById('checkAll').indeterminate = false;
-    updateActionBar();
+    onCheck();
 }
 
 function bulkAction(action) {
-    if (!selectedIds.size) return;
-    const ids = [...selectedIds];
+    const ids = [...document.querySelectorAll('.biz-check:checked')].map(cb => parseInt(cb.dataset.id));
+    if (!ids.length) return;
     fetch('/api/businesses/bulk-action', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -217,7 +197,6 @@ function bulkAction(action) {
     .then(r => r.json())
     .then(data => {
         if (data.ok) {
-            selectedIds.clear();
             loadBusinesses(currentPage);
         } else {
             alert('Błąd: ' + (data.error || 'nieznany'));
