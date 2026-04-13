@@ -180,6 +180,11 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    try:
+        c.execute("ALTER TABLE businesses ADD COLUMN not_interesting INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
     # Tracking pixel columns
     for col_def in [
         "open_token TEXT",

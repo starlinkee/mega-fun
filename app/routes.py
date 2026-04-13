@@ -550,11 +550,15 @@ def api_businesses():
         sort_dir = "desc"
     order_by = f"{sort_col} {sort_dir.upper()}"
 
-    per_page = min(per_page, 200)
+    per_page = min(per_page, 1000)
     offset = (page - 1) * per_page
+
+    show_not_interesting = request.args.get("show_not_interesting", "0").strip()
 
     conditions = ["workspace_id = ?"]
     params = [ws]
+    if show_not_interesting != "1":
+        conditions.append("COALESCE(not_interesting, 0) = 0")
     if has_website == "1":
         conditions.append("(website IS NOT NULL AND website != '')")
     elif has_website == "0":
@@ -626,6 +630,43 @@ def api_businesses():
         "countries": countries,
         "cities": cities,
     })
+
+
+@main_bp.route("/api/businesses/bulk-action", methods=["POST"])
+def api_businesses_bulk_action():
+    """Bulk action on selected businesses."""
+    db = get_db()
+    ws = get_workspace_id()
+    data = request.get_json(force=True)
+    ids = data.get("ids", [])
+    action = data.get("action", "")
+
+    if not ids or not isinstance(ids, list):
+        return jsonify({"error": "Brak ID"}), 400
+
+    # Validate: only IDs belonging to this workspace
+    placeholders = ",".join("?" * len(ids))
+    valid = db.execute(
+        f"SELECT id FROM businesses WHERE id IN ({placeholders}) AND workspace_id = ?",
+        ids + [ws],
+    ).fetchall()
+    valid_ids = [r["id"] for r in valid]
+
+    if not valid_ids:
+        db.close()
+        return jsonify({"error": "Brak pasujących rekordów"}), 404
+
+    if action == "not_interesting":
+        db.execute(
+            f"UPDATE businesses SET not_interesting = 1 WHERE id IN ({','.join('?' * len(valid_ids))})",
+            valid_ids,
+        )
+        db.commit()
+        db.close()
+        return jsonify({"ok": True, "updated": len(valid_ids)})
+
+    db.close()
+    return jsonify({"error": f"Nieznana akcja: {action}"}), 400
 
 
 def _run_batch(queries, coords_sw, coords_ne, batch_op_id, workspace_id=1):

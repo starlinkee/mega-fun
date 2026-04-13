@@ -2,6 +2,15 @@
 {% block content %}
 <h4>Biznesy</h4>
 
+<!-- Pasek akcji (widoczny gdy coś zaznaczone) -->
+<div id="actionBar" class="alert alert-secondary py-2 px-3 mb-2 d-flex align-items-center gap-3" style="display:none!important">
+    <span id="selectedCount" class="fw-bold"></span>
+    <button class="btn btn-sm btn-warning" onclick="bulkAction('not_interesting')">
+        Nie interesuje (ukryj)
+    </button>
+    <button class="btn btn-sm btn-outline-secondary" onclick="clearSelection()">Odznacz wszystko</button>
+</div>
+
 <div class="card">
     <div class="card-header">
         <div class="row g-2 align-items-center">
@@ -39,6 +48,9 @@
             <table class="table table-striped table-sm table-hover mb-0">
                 <thead>
                     <tr>
+                        <th style="width:32px">
+                            <input type="checkbox" id="checkAll" title="Zaznacz wszystkie">
+                        </th>
                         <th class="sortable" data-col="id">#</th>
                         <th class="sortable" data-col="name">Nazwa</th>
                         <th class="sortable" data-col="address">Adres</th>
@@ -53,7 +65,7 @@
                     </tr>
                 </thead>
                 <tbody id="bizTableBody">
-                    <tr><td colspan="11" class="text-center text-muted">Ladowanie...</td></tr>
+                    <tr><td colspan="12" class="text-center text-muted">Ladowanie...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -69,10 +81,11 @@
 
 {% block scripts %}
 <script>
-const PER_PAGE = 50;
+const PER_PAGE = 500;
 let currentPage = 1;
 let debounceTimer = null;
 let currentSort = {col: 'created_at', asc: false};
+let selectedIds = new Set();
 
 const tsOpts = { allowEmptyOption: true, maxOptions: 5000 };
 const tsCategory = new TomSelect('#categoryFilter', tsOpts);
@@ -117,13 +130,16 @@ function loadBusinesses(page) {
 function renderTable(businesses) {
     const tbody = document.getElementById('bizTableBody');
     if (!businesses.length) {
-        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">Brak danych</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" class="text-center text-muted">Brak danych</td></tr>';
         updateSortIndicators();
+        document.getElementById('checkAll').checked = false;
         return;
     }
 
-    tbody.innerHTML = businesses.map(b => `
-        <tr>
+    tbody.innerHTML = businesses.map(b => {
+        const checked = selectedIds.has(b.id) ? 'checked' : '';
+        return `<tr>
+            <td><input type="checkbox" class="biz-check" data-id="${b.id}" ${checked} onchange="onCheck(this)"></td>
             <td>${b.id}</td>
             <td>${b.place_id ? `<a href="https://www.google.com/maps/place/?q=place_id:${b.place_id}" target="_blank" rel="noopener">${esc(b.name)}</a>` : esc(b.name)}</td>
             <td>${esc(b.address)}</td>
@@ -135,11 +151,81 @@ function renderTable(businesses) {
             <td><small>${esc(b.category_google || '')}</small></td>
             <td><small class="text-muted">${esc(b.source_query || '')}</small></td>
             <td><small>${b.created_at || ''}</small></td>
-        </tr>
-    `).join('');
+        </tr>`;
+    }).join('');
 
     updateSortIndicators();
+    updateCheckAll();
+    updateActionBar();
 }
+
+// ---- Checkboxy ----
+
+function onCheck(el) {
+    const id = parseInt(el.dataset.id);
+    if (el.checked) selectedIds.add(id);
+    else selectedIds.delete(id);
+    updateCheckAll();
+    updateActionBar();
+}
+
+document.getElementById('checkAll').addEventListener('change', function() {
+    document.querySelectorAll('.biz-check').forEach(cb => {
+        const id = parseInt(cb.dataset.id);
+        cb.checked = this.checked;
+        if (this.checked) selectedIds.add(id);
+        else selectedIds.delete(id);
+    });
+    updateActionBar();
+});
+
+function updateCheckAll() {
+    const boxes = document.querySelectorAll('.biz-check');
+    const checked = document.querySelectorAll('.biz-check:checked');
+    const allBox = document.getElementById('checkAll');
+    allBox.checked = boxes.length > 0 && checked.length === boxes.length;
+    allBox.indeterminate = checked.length > 0 && checked.length < boxes.length;
+}
+
+function updateActionBar() {
+    const bar = document.getElementById('actionBar');
+    const cnt = document.getElementById('selectedCount');
+    if (selectedIds.size > 0) {
+        cnt.textContent = `Zaznaczono: ${selectedIds.size}`;
+        bar.style.removeProperty('display');
+    } else {
+        bar.style.display = 'none';
+    }
+}
+
+function clearSelection() {
+    selectedIds.clear();
+    document.querySelectorAll('.biz-check').forEach(cb => cb.checked = false);
+    document.getElementById('checkAll').checked = false;
+    document.getElementById('checkAll').indeterminate = false;
+    updateActionBar();
+}
+
+function bulkAction(action) {
+    if (!selectedIds.size) return;
+    const ids = [...selectedIds];
+    fetch('/api/businesses/bulk-action', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ids, action}),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) {
+            selectedIds.clear();
+            loadBusinesses(currentPage);
+        } else {
+            alert('Błąd: ' + (data.error || 'nieznany'));
+        }
+    });
+}
+
+// ---- Sortowanie ----
 
 function updateSortIndicators() {
     document.querySelectorAll('th.sortable').forEach(th => {
@@ -164,6 +250,8 @@ document.querySelectorAll('th.sortable').forEach(th => {
     });
 });
 
+// ---- Paginacja ----
+
 function renderPagination(page, pages, total) {
     const info = document.getElementById('pageInfo');
     const nav = document.getElementById('pagination');
@@ -183,6 +271,8 @@ function renderPagination(page, pages, total) {
     html += `<button class="btn btn-outline-secondary" ${page>=pages?'disabled':''} onclick="loadBusinesses(${page+1})">&raquo;</button>`;
     nav.innerHTML = html;
 }
+
+// ---- TomSelect ----
 
 function updateTomSelect(ts, items, placeholder) {
     const current = ts.getValue();
